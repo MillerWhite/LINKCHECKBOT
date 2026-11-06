@@ -1,0 +1,1834 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LINKCHECK</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<style>
+:root{--bg:#050505;--card:#121212;--border:#262626;--silver:#a0a0a0;--text:#fff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:0 0 100px;display:flex;flex-direction:column;min-height:100vh;overflow-x:hidden}
+button,input,select,textarea{font-family:inherit}
+.top-language{position:fixed;top:8px;right:14px;z-index:500;display:flex;align-items:center;gap:3px;padding:3px;background:#111;border:1px solid #333;border-radius:11px;box-shadow:0 0 14px #ffffff12;backdrop-filter:blur(15px)}
+.language-btn{border:0;background:transparent;color:#777;padding:7px 10px;border-radius:8px;font-size:11px;font-weight:800;cursor:pointer;transition:all .25s ease}
+.language-btn.active{background:#fff;color:#050505;box-shadow:0 0 12px #ffffff55}
+.screen{display:none;padding:38px 18px 25px;animation:fadeIn .35s ease}
+.screen.active{display:flex;flex-direction:column;flex-grow:1}
+@keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+h1{font-size:32px;letter-spacing:2px;margin:8px 0 5px;font-weight:800;text-shadow:0 0 10px #ffffff4d}
+.subtitle{color:var(--silver);font-size:14px;margin:0 0 25px}
+h2{font-size:20px;margin:8px 0 15px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:12px;word-wrap:break-word;overflow-wrap:break-word;word-break:break-word;transition:border-color .25s,box-shadow .25s,transform .25s}
+.card:active{border-color:#777;box-shadow:0 0 15px #ffffff12;transform:scale(.99)}
+.input-group{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}
+input,select,textarea{background:#0a0a0a;border:1px solid var(--border);color:var(--text);padding:16px;border-radius:12px;font-size:15px;outline:none;width:100%;transition:border-color .25s,box-shadow .25s}
+input:focus,textarea:focus,select:focus{border-color:#aaa;box-shadow:0 0 12px #ffffff18}
+input::placeholder,textarea::placeholder{color:#666}
+.search-input{margin-bottom:12px;background:#0d0d0d;border-color:#303030}
+.search-input:focus{border-color:#888;box-shadow:0 0 14px #ffffff12}
+.catalog-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 10px}
+.catalog-controls select{min-width:0;padding:13px 11px;font-size:13px;background:#0d0d0d;border-color:#303030}
+.catalog-results-count{color:#777;font-size:12px;margin:0 0 12px}
+.catalog-freshness{margin-top:9px;color:#777;font-size:11px;line-height:1.45}
+.recent-check-card{display:flex;flex-direction:column;gap:8px}
+.recent-check-meta{color:#777;font-size:11px;line-height:1.4}
+.recent-check-status{color:#cfcfcf;font-size:12px}
+.btn{background:#fff;color:#050505;border:1px solid #fff;padding:16px;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;width:100%;box-shadow:0 0 15px #ffffff1a;transition:all .25s ease}
+.btn:hover{box-shadow:0 0 12px #fff,0 0 28px #ffffff55;transform:translateY(-2px)}
+.btn:active{transform:scale(.97);box-shadow:0 0 20px #ffffff80}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.stats-row{display:flex;justify-content:center;align-items:center;gap:12px;width:100%;margin:20px 0 25px}
+.stat-box{flex:0 1 260px;width:100%;max-width:260px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px;text-align:center;transition:all .25s ease}
+.stat-box:active{border-color:#888;box-shadow:0 0 16px #ffffff20}
+.stat-num{font-size:26px;font-weight:800}
+.stat-label{font-size:12px;color:var(--silver);margin-top:6px;text-transform:uppercase}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:#0a0a0af2;backdrop-filter:blur(20px);border-top:1px solid var(--border);display:flex;justify-content:space-around;padding:12px 0 18px;z-index:100;box-shadow:0 -5px 25px #0008}
+.nav-item{display:flex;flex-direction:column;align-items:center;color:#555;font-size:10px;cursor:pointer;padding:7px 12px;border-radius:12px;font-weight:600;letter-spacing:.5px;transition:all .25s ease;position:relative}
+.nav-item svg{width:24px;height:24px;margin-bottom:4px;fill:currentColor;transition:all .25s ease}
+.nav-item.active{color:#fff;text-shadow:0 0 8px #ffffff80,0 0 18px #ffffff40;background:#ffffff08;box-shadow:0 0 14px #ffffff12}
+.nav-item.active svg{filter:drop-shadow(0 0 5px #fff) drop-shadow(0 0 10px #ffffff80);transform:translateY(-2px)}
+.nav-item:active{transform:scale(.88);color:#fff}
+.nav-item.active::after{content:'';position:absolute;bottom:-8px;width:18px;height:2px;background:#fff;border-radius:10px;box-shadow:0 0 8px #fff,0 0 16px #fff}
+.result-box{display:none;margin:15px 0 25px;padding:20px;border-radius:16px;background:var(--card);border:1px solid var(--border);animation:fadeIn .3s;word-wrap:break-word;box-shadow:0 0 20px #ffffff08}
+.status-badge{display:inline-block;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-bottom:12px}
+.status-unverified{background:#ffffff0d;color:#aaa}
+.status-verified{background:#4ade801a;color:#4ade80;border:1px solid #4ade804d;box-shadow:0 0 12px #4ade8015}
+.status-pending{background:#fbbf241a;color:#fbbf24;border:1px solid #fbbf244d}
+.status-rejected{background:#f871711a;color:#f87171;border:1px solid #f871714d}
+.empty-state{text-align:center;color:#555;padding:30px 0;font-size:14px}
+.recent-grid{display:flex;flex-direction:column;gap:10px}
+.toast-container{position:fixed;bottom:90px;left:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.toast{background:#1a1a1a;color:#fff;padding:15px 20px;border-radius:12px;border:1px solid #333;border-left:4px solid #fff;font-size:14px;font-weight:500;box-shadow:0 10px 30px #0008,0 0 12px #ffffff12;animation:slideUp .3s ease,fadeOut .3s ease 2.7s forwards}
+.toast.success{border-left-color:#4ade80}.toast.error{border-left-color:#f87171}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeOut{to{opacity:0;transform:translateY(10px)}}
+.admin-card{display:flex;flex-direction:column;gap:10px}
+.admin-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.btn-admin{background:#ffffff05;color:var(--text);border:1px solid var(--border);font-weight:600;padding:12px;border-radius:12px;flex:1;cursor:pointer;min-width:80px;font-size:14px;text-align:center;transition:all .25s ease}
+.btn-admin:hover{border-color:#aaa;box-shadow:0 0 12px #ffffff25;transform:translateY(-2px)}
+.btn-admin:active{transform:scale(.96);box-shadow:0 0 16px #ffffff35}
+.btn-approve{color:#4ade80;border-color:#4ade804d}.btn-approve:hover{box-shadow:0 0 14px #4ade8030}
+.btn-reject,.btn-delete{color:#f87171;border-color:#f871714d}.btn-reject:hover,.btn-delete:hover{box-shadow:0 0 14px #f8717130}
+.btn-save-project{background:#fff;color:#050505;border-color:#fff;font-weight:800;box-shadow:0 0 14px #ffffff20}.btn-save-project:hover{background:#f1f1f1;color:#050505;border-color:#f1f1f1;box-shadow:0 0 16px #ffffff45}.btn-save-project:disabled{background:#d8d8d8;color:#555;border-color:#d8d8d8}
+.admin-tabs{display:flex;gap:10px;margin-bottom:20px;border-bottom:1px solid var(--border);overflow-x:auto;white-space:nowrap;scrollbar-width:none}.admin-tabs::-webkit-scrollbar{display:none}.admin-tab{flex:0 0 auto}
+.admin-tab{padding:10px 15px;color:#666;cursor:pointer;border-bottom:2px solid transparent;font-size:14px;transition:all .25s ease}
+.admin-tab.active{color:var(--text);border-bottom-color:var(--text);text-shadow:0 0 8px #ffffff70}
+.desc-text{font-size:13px;color:#888;margin:0;white-space:pre-wrap}
+.request-badge{display:inline-block;padding:4px 8px;background:#fbbf2433;color:#fbbf24;border-radius:6px;font-size:11px;font-weight:600;margin-bottom:5px}
+.catalog-published{margin-top:10px;font-size:11px;color:#4ade80;text-shadow:0 0 8px #4ade8030}
+.publication-status{display:inline-block;margin-top:10px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 0 10px #ffffff35}
+.project-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.project-title-row{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
+.linkcheck-badge-trigger{display:inline-flex;align-items:center;justify-content:center;flex:0 0 20px;width:20px;height:20px;padding:0;margin:0 0 0 1px;border:0;background:transparent;border-radius:50%;cursor:pointer;vertical-align:middle;filter:drop-shadow(0 0 4px #ffffff22);transition:transform .18s,filter .18s}
+.linkcheck-badge-trigger:hover{transform:scale(1.12);filter:drop-shadow(0 0 7px #ffffff80)}
+.linkcheck-badge-trigger:active{transform:scale(.94)}
+.linkcheck-badge-trigger svg{display:block;width:20px;height:20px}
+.linkcheck-badge-note{font-size:11px;color:#aaa;line-height:1.4}
+.badge-info-modal{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;width:100%;max-width:360px;padding:28px 24px 24px;background:#111;border:1px solid #3a3a3a;border-radius:20px;text-align:center;box-shadow:0 18px 60px #000b}
+.badge-info-modal .report-modal-header{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:36px;margin:0 0 18px;padding:0}
+.badge-info-modal .report-modal-title{display:block;box-sizing:border-box;width:100%;max-width:100%;margin:0 auto;padding:0 46px;text-align:center;font-size:17px;line-height:1.35;font-weight:800;letter-spacing:0;overflow-wrap:anywhere}
+.badge-info-modal .report-modal-header .modal-close{position:absolute;top:50%;right:0;z-index:2;flex:0 0 32px;width:32px;height:32px;transform:translateY(-50%)}
+.badge-info-modal .report-modal-header .modal-close:active{transform:translateY(-50%) scale(.96)}
+.badge-info-symbol{display:flex;justify-content:center;align-items:center;flex:0 0 76px;margin:0 auto 16px;width:76px;height:76px}
+.badge-info-symbol svg{display:block;width:76px;height:76px;flex:0 0 76px;filter:drop-shadow(0 0 12px #ffffff24)}
+.badge-info-text{display:block;width:100%;max-width:290px;margin:0 auto;color:#bdbdbd;font-size:13px;line-height:1.6;text-align:center;text-wrap:pretty}
+.badge-info-source{display:block;width:100%;max-width:290px;box-sizing:border-box;margin:16px auto 0;padding:11px 14px;border:1px solid #333;border-radius:10px;color:#ddd;background:#ffffff06;font-size:11px;line-height:1.55;text-align:center;overflow-wrap:anywhere}
+.project-badge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:700;letter-spacing:.2px;line-height:1.2}
+.badge-official{background:#ffffff12;color:#e5e5e5;border:1px solid #ffffff30}
+.badge-telegram{background:#229ed91a;color:#65c7f3;border:1px solid #229ed94d}
+.badge-type{background:#ffffff08;color:#888;border:1px solid #ffffff12}
+.project-description{color:#888;font-size:12px;line-height:1.5;margin-top:9px}
+.project-source{display:inline-block;color:#777;font-size:11px;margin-top:8px;text-decoration:none}
+.project-source:active{color:#fff}
+.project-website{display:inline-block;color:#cfcfcf;font-size:12px;margin-top:8px;text-decoration:none}
+.project-website:active{color:#fff}
+.official-verification-panel{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding:12px;border:1px solid #333;border-radius:12px;background:#ffffff04}
+.official-verification-status{font-size:12px;line-height:1.5;color:#cfcfcf;overflow-wrap:anywhere}
+.official-verification-status.is-confirmed{color:#4ade80}
+.official-verification-status.is-pending{color:#fbbf24}
+.official-verification-form{display:none;flex-direction:column;gap:9px;margin-top:4px}
+.official-request-trigger{display:inline-flex;align-self:flex-start;align-items:center;justify-content:center;flex:0 0 auto;width:auto;min-width:0;max-width:100%;padding:9px 13px;border:1px solid #454545;border-radius:9px;background:#ffffff08;color:#e8e8e8;font-size:12px;font-weight:700;line-height:1.25;letter-spacing:.1px;box-shadow:none;white-space:normal;text-align:center;transition:background .2s,border-color .2s,transform .2s}
+.official-request-trigger:hover{background:#ffffff12;border-color:#777;box-shadow:0 0 12px #ffffff10;transform:translateY(-1px)}
+.official-request-trigger:active{transform:scale(.98);box-shadow:none}
+.official-request-submit{display:inline-flex;align-self:flex-start;align-items:center;justify-content:center;flex:0 0 auto;width:auto;min-width:0;max-width:100%;margin-top:2px;padding:10px 15px;border:1px solid #cfcfcf;border-radius:9px;background:#e8e8e8;color:#080808;font-size:12px;font-weight:800;line-height:1.25;box-shadow:none;white-space:normal;text-align:center}
+.official-request-submit:hover{background:#fff;border-color:#fff;box-shadow:0 0 14px #ffffff20;transform:translateY(-1px)}
+.official-request-submit:disabled{opacity:.55;transform:none;box-shadow:none}
+.official-verification-form input,.official-verification-form textarea{width:100%;box-sizing:border-box}
+.official-verification-hint{font-size:11px;line-height:1.5;color:#888}
+.moderation-log-card{gap:8px}
+.moderation-log-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.moderation-log-action{font-size:12px;font-weight:800;color:#eee;line-height:1.4}
+.moderation-log-date,.moderation-log-admin{font-size:10px;color:#777;line-height:1.5}
+.moderation-log-project{font-size:12px;color:#cfcfcf;font-weight:650;overflow-wrap:anywhere}
+.moderation-log-project-link{font-size:12px;color:#cfcfcf;text-decoration:none;overflow-wrap:anywhere}
+.moderation-log-project-link:active{color:#fff}
+.moderation-log-comment{padding:9px 10px;border:1px solid #292929;border-radius:9px;background:#ffffff04;color:#999;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.project-editor{display:flex;flex-direction:column;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.project-editor textarea{min-height:76px;resize:vertical}
+.ownership-panel{margin-top:12px;padding-top:10px;border-top:1px solid #242424}
+.ownership-toolbar{display:flex;align-items:center;justify-content:space-between;gap:9px;min-width:0}
+.ownership-state{min-width:0;font-size:11px;font-weight:700;line-height:1.35;color:#999}
+.ownership-state.is-verified{color:#4ade80}
+.ownership-actions{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.ownership-start-btn{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:7px 10px;border:1px solid #555;border-radius:9px;background:#f2f2f2;color:#080808;font-size:11px;font-weight:800;line-height:1;white-space:nowrap;cursor:pointer;transition:background .2s,border-color .2s,transform .2s}
+.ownership-start-btn:hover{background:#fff;border-color:#fff;transform:translateY(-1px)}
+.ownership-start-btn:active{transform:scale(.97)}
+.ownership-start-btn:disabled{opacity:.55;cursor:wait;transform:none}
+.ownership-help-btn{display:inline-grid;place-items:center;width:27px;height:27px;flex:0 0 27px;padding:0;border:1px solid #484848;border-radius:50%;background:#ffffff06;color:#aaa;font-size:13px;font-weight:800;line-height:1;cursor:pointer;transition:all .2s}
+.ownership-help-btn:hover,.ownership-help-btn[aria-expanded="true"]{border-color:#aaa;color:#fff;background:#ffffff12}
+.ownership-help-popover{display:none;margin-top:9px;padding:10px 12px;border:1px solid #303030;border-radius:10px;background:#0b0b0b;color:#aaa;font-size:11px;line-height:1.55;white-space:pre-line;box-shadow:0 8px 22px #0008}
+.ownership-help-popover.open{display:block;animation:fadeIn .18s ease}
+.ownership-code-area{display:none;margin-top:10px;padding:11px;border:1px solid #303030;border-radius:11px;background:#090909}
+.ownership-code-instructions{font-size:11px;color:#aaa;line-height:1.5;margin-bottom:9px}
+.ownership-code-label{font-size:10px;color:#777;margin-bottom:5px}
+.ownership-code-row{display:flex;align-items:center;gap:7px}
+.ownership-code-input{min-width:0;padding:10px 8px!important;font-size:16px!important;font-weight:800;letter-spacing:1px;text-align:center}
+.ownership-copy-btn,.ownership-check-btn{min-height:34px;padding:8px 11px;border:1px solid #3b3b3b;border-radius:9px;background:#ffffff08;color:#eee;font-size:11px;font-weight:700;cursor:pointer}
+.ownership-copy-btn{flex:0 0 auto}
+.ownership-check-btn{width:100%;margin-top:9px}
+.ownership-code-note{font-size:10px;color:#777;margin-top:8px}
+.ownership-bot-card{margin-top:10px;padding:13px;border:1px solid #303030;border-radius:13px;background:linear-gradient(145deg,#151515,#090909);box-shadow:0 8px 24px #0005}
+.ownership-bot-heading{display:flex;align-items:center;gap:8px;margin-bottom:11px;color:#fff;font-size:12px;font-weight:800;letter-spacing:.2px}
+.ownership-bot-heading::before{content:'✓';display:grid;place-items:center;width:22px;height:22px;flex:0 0 22px;border:1px solid #777;border-radius:50%;color:#fff;font-size:11px}
+.ownership-bot-steps{display:flex;flex-direction:column;gap:9px;margin:0;padding:0;list-style:none;counter-reset:botstep}
+.ownership-bot-steps li{position:relative;display:flex;align-items:flex-start;gap:9px;color:#c8c8c8;font-size:11px;line-height:1.45;counter-increment:botstep}
+.ownership-bot-steps li::before{content:counter(botstep);display:grid;place-items:center;width:20px;height:20px;flex:0 0 20px;border:1px solid #777;border-radius:50%;background:#fff;color:#080808;font-size:10px;font-weight:900;line-height:1}
+.ownership-bot-warning{margin-top:11px;padding:9px 10px;border:1px solid #494949;border-radius:9px;background:#ffffff08;color:#aaa;font-size:10px;line-height:1.5}
+.ownership-bot-action{display:flex;align-items:center;justify-content:center;width:100%;min-height:39px;margin-top:9px;padding:10px 12px;border:1px solid #555;border-radius:10px;background:#f2f2f2;color:#080808;font-size:11px;font-weight:800;text-align:center;cursor:pointer;transition:background .2s,transform .2s}
+.ownership-bot-action:hover{background:#fff;transform:translateY(-1px)}
+.ownership-bot-action:active{transform:scale(.98)}
+.ownership-bot-action.secondary{border-color:#444;background:#ffffff08;color:#eee}
+
+.ownership-upload-box{display:flex;flex-direction:column;gap:9px;margin-top:11px;padding-top:10px;border-top:1px solid #292929}
+.ownership-file-input{display:block;width:100%;padding:10px;background:#080808;border:1px dashed #555;border-radius:10px;color:#aaa;font-size:11px}
+.ownership-local-preview{display:none;max-width:160px;max-height:120px;object-fit:cover;border:1px solid #444;border-radius:9px;cursor:zoom-in}
+.ownership-upload-btn{width:100%;min-height:39px;border:1px solid #fff;border-radius:10px;background:#fff;color:#050505;font-size:12px;font-weight:800;cursor:pointer}
+.ownership-upload-btn:disabled{opacity:.5;cursor:wait}
+.ownership-manual-box{margin-top:10px;padding-top:10px;border-top:1px solid #292929}
+.ownership-manual-toggle{width:100%;padding:9px 10px;border:1px solid #444;border-radius:9px;background:#ffffff08;color:#cfcfcf;font-size:11px;font-weight:700;text-align:left;cursor:pointer}
+.ownership-manual-form{display:none;margin-top:9px;padding:10px;border:1px solid #303030;border-radius:10px;background:#080808}
+.ownership-manual-form.open{display:block}
+.ownership-manual-form textarea{width:100%;min-height:78px;margin:0 0 8px;padding:10px;border:1px solid #333;border-radius:8px;background:#111;color:#eee;font:inherit;font-size:11px;resize:vertical}
+.ownership-manual-send{width:100%;min-height:36px;border:1px solid #eee;border-radius:9px;background:#eee;color:#080808;font-size:11px;font-weight:800;cursor:pointer}
+.ownership-manual-send:disabled{opacity:.5;cursor:wait}
+.ownership-admin-image{display:block;width:150px;height:112px;object-fit:cover;border:1px solid #424242;border-radius:10px;background:#080808;cursor:zoom-in}
+.ownership-admin-image-loading{display:grid;place-items:center;width:150px;height:112px;border:1px solid #333;border-radius:10px;background:#080808;color:#777;font-size:11px}
+.image-viewer{position:fixed;inset:0;z-index:2500;display:none;align-items:center;justify-content:center;padding:18px;background:#000e;backdrop-filter:blur(8px)}
+.image-viewer.open{display:flex}
+.image-viewer img{display:block;max-width:100%;max-height:88vh;object-fit:contain;border-radius:10px;box-shadow:0 12px 50px #000}
+.image-viewer-close{position:absolute;top:18px;right:18px;width:40px;height:40px;border:1px solid #555;border-radius:50%;background:#111;color:#fff;font-size:25px;cursor:pointer}
+
+.btn-report{display:inline-flex;align-items:center;justify-content:center;margin-top:13px;padding:9px 12px;border:1px solid #343434;border-radius:10px;background:#ffffff06;color:#aaa;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s ease}.btn-report:hover{border-color:#777;color:#fff}.btn-report:active{transform:scale(.98)}
+.modal-backdrop{position:fixed;inset:0;z-index:1200;display:none;align-items:center;justify-content:center;padding:20px;background:#000c;backdrop-filter:blur(8px)}.report-modal{width:100%;max-width:420px;padding:20px;background:#111;border:1px solid #333;border-radius:18px;box-shadow:0 18px 60px #000b}.report-modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:8px}.report-modal-title{font-size:18px;font-weight:800;margin:0}.report-modal-project{font-size:12px;color:#999;margin:0 0 16px;overflow-wrap:anywhere}.report-modal select,.report-modal textarea{margin-bottom:10px}.report-modal textarea{min-height:95px;resize:vertical}.modal-close{flex:0 0 32px;width:32px;height:32px;border:1px solid #333;border-radius:10px;background:#ffffff08;color:#aaa;font-size:20px;line-height:1;cursor:pointer}.report-modal .btn{margin-top:4px}
+.founder-card{margin-top:24px;padding:16px;background:linear-gradient(145deg,#151515,#090909);border:1px solid #292929;border-radius:18px;box-shadow:0 0 20px #ffffff08}
+.founder-kicker{color:#777;font-size:10px;font-weight:800;letter-spacing:1.8px;margin-bottom:14px}
+.founder-profile{display:flex;align-items:center;gap:12px;min-width:0;color:#fff;text-decoration:none}
+.founder-avatar{width:54px;height:54px;flex:0 0 54px;border-radius:50%;object-fit:cover;background:#222;border:1px solid #383838}
+.founder-info{display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;flex:1}
+.founder-name{font-size:16px;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
+.founder-role{color:#888;font-size:12px;line-height:1.2}
+.founder-username-row{display:flex;align-items:center;gap:5px;min-height:14px;margin-top:0}
+.founder-username{color:#777;font-size:11px;line-height:14px;display:flex;align-items:center}
+.founder-gift{display:none;width:14px;height:14px;margin:0;padding:0;overflow:hidden;flex:0 0 14px;align-items:center;justify-content:center}
+.founder-gift svg{display:block;width:100%;height:100%}
+.founder-contact{display:flex;align-items:center;justify-content:center;min-height:44px;margin-top:14px;background:#fff;color:#050505;text-decoration:none;border-radius:12px;font-size:14px;font-weight:800;transition:all .2s ease}
+.founder-contact:active{transform:scale(.98);box-shadow:0 0 15px #ffffff50}
+.founder-caption{color:#777;font-size:11px;line-height:1.5;margin:10px 0 0;text-align:center}
+.privacy-link{display:flex;align-items:center;justify-content:center;gap:8px;margin:18px 0 8px;padding:13px 12px;border:1px solid #292929;border-radius:12px;background:#ffffff05;color:#888;text-decoration:none;font-size:12px;font-weight:700;transition:all .2s ease}.privacy-link:active{transform:scale(.99);border-color:#666;color:#fff}
+.privacy-modal{position:fixed;inset:0;z-index:2400;display:none;flex-direction:column;background:#080808}.privacy-modal.open{display:flex}.privacy-modal-header{height:58px;flex:0 0 58px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid #292929;background:#080808}.privacy-modal-title{font-size:13px;font-weight:800;letter-spacing:.4px}.privacy-modal-close{width:34px;height:34px;border:1px solid #333;border-radius:10px;background:#ffffff08;color:#fff;font-size:22px;line-height:1;cursor:pointer}.privacy-modal iframe{width:100%;height:calc(100% - 58px);border:0;background:#080808}
+@media(hover:none){.btn:hover,.btn-admin:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="top-language">
+    <button class="language-btn" id="lang-ru" onclick="setLanguage('ru')">RU</button>
+    <button class="language-btn" id="lang-en" onclick="setLanguage('en')">EN</button>
+</div>
+<div id="screen-home" class="screen active">
+    <h1>LINKCHECK</h1>
+    <p class="subtitle" data-i18n="subtitle">Проверяй. Подтверждай. Защищайся.</p>
+    <div class="input-group">
+        <input id="check-link" data-i18n-placeholder="checkPlaceholder" placeholder="Ссылка или @username">
+        <button class="btn" onclick="checkLink(this)" data-i18n="checkButton">Проверить</button>
+    </div>
+    <div id="check-result" class="result-box">
+        <div id="status-badge" class="status-badge status-unverified">Статус</div>
+        <div id="result-text" style="font-size:14px;color:var(--silver);line-height:1.6"></div>
+    </div>
+    <div class="stats-row"><div class="stat-box"><div class="stat-num" id="stat-projects">-</div><div class="stat-label" data-i18n="projects">Проектов</div></div></div>
+    <h2 data-i18n="recentChecks">Последние проверки</h2>
+    <div id="recent-projects" class="recent-grid"><div class="empty-state" data-i18n="noProjects">Пока нет добавленных проектов</div></div>
+    <div class="founder-card">
+        <div class="founder-kicker" data-i18n="founderLabel">СОЗДАТЕЛЬ LINKCHECK</div>
+        <a class="founder-profile" id="founder-profile-link" href="https://t.me/nifort" target="_blank" rel="noopener noreferrer">
+            <img class="founder-avatar" id="founder-avatar" alt="nifort" style="display:none" onerror="this.style.display='none'">
+            <div class="founder-info">
+                <div class="founder-name" id="founder-name">nifort</div>
+                <div class="founder-role" data-i18n="founderRole">Основатель проекта</div>
+                <div class="founder-username-row"><div class="founder-username" id="founder-username"></div><div class="founder-gift" id="founder-gift" aria-label="Коллекционный подарок"></div></div>
+            </div>
+        </a>
+        <a class="founder-contact" id="founder-contact" href="https://t.me/nifort" target="_blank" rel="noopener noreferrer" data-i18n="founderContact">Написать сообщение</a>
+        <p class="founder-caption" data-i18n="founderCaption">По важным вопросам, предложениям и сотрудничеству</p>
+    </div>
+</div>
+<div id="screen-catalog" class="screen">
+    <h2 data-i18n="catalog">Каталог проектов</h2>
+    <input id="catalog-search" class="search-input" type="search" data-i18n-placeholder="searchProjectsPlaceholder" placeholder="Поиск по названию, ссылке или описанию..." oninput="filterCatalog()" autocomplete="off">
+    <div class="catalog-controls">
+        <select id="catalog-type-filter" aria-label="Тип ресурса" onchange="filterCatalog()">
+            <option value="all" data-i18n="catalogTypeAll">Все типы</option>
+            <option value="channel" data-i18n="projectTypeChannel">Каналы</option>
+            <option value="bot" data-i18n="projectTypeBot">Боты</option>
+            <option value="group" data-i18n="projectTypeGroup">Группы</option>
+            <option value="other" data-i18n="projectTypeOther">Другие ресурсы</option>
+        </select>
+        <select id="catalog-status-filter" aria-label="Подтверждённый статус" onchange="filterCatalog()">
+            <option value="all" data-i18n="catalogStatusAll">Все статусы</option>
+            <option value="telegram" data-i18n="catalogStatusTelegram">Telegram Verified</option>
+            <option value="official" data-i18n="catalogStatusOfficial">OFFICIAL RESOURCE</option>
+            <option value="ownership" data-i18n="catalogStatusOwnership">OWNERSHIP VERIFIED</option>
+            <option value="badge" data-i18n="catalogStatusBadge">Бейдж LINKCHECK</option>
+            <option value="none" data-i18n="catalogStatusNone">Без подтверждений</option>
+        </select>
+        <select id="catalog-sort-filter" aria-label="Сортировка" onchange="filterCatalog()">
+            <option value="recommended" data-i18n="catalogSortRecommended">По умолчанию</option>
+            <option value="newest" data-i18n="catalogSortNewest">Сначала новые</option>
+            <option value="official" data-i18n="catalogSortOfficial">Сначала OFFICIAL</option>
+            <option value="verified" data-i18n="catalogSortVerified">Сначала верифицированные</option>
+            <option value="checked" data-i18n="catalogSortChecked">Недавно проверенные</option>
+        </select>
+    </div>
+    <div id="catalog-results-count" class="catalog-results-count" aria-live="polite"></div>
+    <div id="catalog-list" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+</div>
+<div id="screen-add" class="screen">
+    <h2 data-i18n="addProject">Добавить проект</h2>
+    <div id="add-blocked" style="display:none;text-align:center;padding:40px 20px">
+        <p style="font-size:16px;color:var(--silver);margin-bottom:20px" data-i18n="noRights">У вас пока нет прав на добавление проектов.</p>
+        <button class="btn-admin" style="width:100%" onclick="requestAccess()" id="request-access-btn" data-i18n="requestAccess">Запросить права у админа</button>
+    </div>
+    <div id="add-form" class="input-group" style="display:none">
+        <input id="add-title" data-i18n-placeholder="projectName" placeholder="Название проекта">
+        <input id="add-link" data-i18n-placeholder="projectLink" placeholder="Ссылка или @username">
+        <select id="add-category">
+            <option value="channel" data-i18n="channel">Канал</option>
+            <option value="bot" data-i18n="bot">Бот</option>
+            <option value="group" data-i18n="group">Группа</option>
+            <option value="other" data-i18n="other">Другое</option>
+        </select>
+        <textarea id="add-desc" rows="3" data-i18n-placeholder="description" placeholder="Описание (необязательно)"></textarea>
+        <input id="add-web" data-i18n-placeholder="website" placeholder="Официальный сайт (необязательно)">
+        <button class="btn" onclick="submitProject(this)" data-i18n="submitModeration">Отправить на модерацию</button>
+    </div>
+</div>
+<div id="screen-profile" class="screen">
+    <h2 data-i18n="myProjects">Мои проекты</h2>
+    <div id="my-projects-list" class="recent-grid"><div class="empty-state" data-i18n="noOwnProjects">У вас пока нет проектов</div></div>
+    <a class="privacy-link" id="privacy-link" href="/privacy?lang=ru" onclick="event.preventDefault();openPrivacyPolicy()" data-i18n="privacyPolicy">Политика конфиденциальности</a>
+</div>
+<div id="screen-admin" class="screen">
+    <h2 data-i18n="adminPanel">Админ-панель</h2>
+    <div class="admin-tabs">
+        <div class="admin-tab active" id="tab-req" onclick="switchAdminTab('req',this)" data-i18n="requests">Заявки</div>
+        <div class="admin-tab" id="tab-users" onclick="switchAdminTab('users',this)" data-i18n="users">Пользователи</div>
+        <div class="admin-tab" id="tab-ownership" onclick="switchAdminTab('ownership',this)" data-i18n="ownershipQueue">Проверка владения</div>
+        <div class="admin-tab" id="tab-official" onclick="switchAdminTab('official',this)" data-i18n="officialQueue">OFFICIAL RESOURCE</div>
+        <div class="admin-tab" id="tab-reports" onclick="switchAdminTab('reports',this)" data-i18n="reports">Жалобы</div>
+        <div class="admin-tab" id="tab-log" onclick="switchAdminTab('log',this)" data-i18n="moderationLog">Журнал действий</div>
+        <div class="admin-tab" id="tab-all" onclick="switchAdminTab('all',this)" data-i18n="allProjects">Все проекты</div>
+    </div>
+    <div id="admin-content-req" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="admin-content-ownership" class="recent-grid" style="display:none"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="admin-content-official" class="recent-grid" style="display:none"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="admin-content-reports" class="recent-grid" style="display:none"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="admin-content-log" class="recent-grid" style="display:none"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="admin-content-users" style="display:none;flex-direction:column;gap:10px">
+        <input id="admin-users-search" class="search-input" type="search" data-i18n-placeholder="searchUsersPlaceholder" placeholder="Поиск по username или Telegram ID..." oninput="filterAdminUsers()" autocomplete="off">
+        <div id="admin-users-list" class="recent-grid"></div>
+    </div>
+    <div id="admin-content-all" style="display:none;flex-direction:column;gap:10px">
+        <input id="admin-projects-search" class="search-input" type="search" data-i18n-placeholder="searchAdminProjectsPlaceholder" placeholder="Поиск по названию, ссылке, ID или статусу..." oninput="filterAdminProjects()" autocomplete="off">
+        <div id="admin-projects-list" class="recent-grid"></div>
+    </div>
+</div>
+<div id="ownership-image-viewer" class="image-viewer" role="dialog" aria-modal="true" onclick="if(event.target===this)closeOwnershipImageViewer()">
+    <button class="image-viewer-close" type="button" onclick="closeOwnershipImageViewer()" aria-label="Close">×</button>
+    <img id="ownership-image-viewer-img" alt="BotFather screenshot">
+</div>
+<div id="linkcheck-badge-modal" class="modal-backdrop" role="presentation" onclick="if(event.target===this)closeLinkcheckBadgeInfo()">
+    <div class="badge-info-modal" role="dialog" aria-modal="true" aria-labelledby="linkcheck-badge-title">
+        <div class="report-modal-header">
+            <h3 class="report-modal-title" id="linkcheck-badge-title" data-i18n="linkcheckBadgeTitle">Фирменный знак LINKCHECK</h3>
+            <button class="modal-close" type="button" onclick="closeLinkcheckBadgeInfo()" aria-label="Close">×</button>
+        </div>
+        <div class="badge-info-symbol" aria-hidden="true">
+            <svg viewBox="0 0 40 40" role="img">
+                <circle cx="20" cy="20" r="17" fill="#080808" stroke="#f4f4f4" stroke-width="1.8"/>
+                <path d="M16.1 8.7h4.8l-3.4 16.1h10.1l-1.2 4.1H11.1z" fill="#f4f4f4"/>
+                <path d="m23.4 17.6 6.1-6.1 2.2 2.2-6.1 6.1z" fill="#f4f4f4"/>
+            </svg>
+        </div>
+        <p class="badge-info-text" id="linkcheck-badge-description"></p>
+        <div class="badge-info-source" id="linkcheck-badge-source"></div>
+    </div>
+</div>
+<div id="report-modal" class="modal-backdrop" role="presentation" onclick="if(event.target===this)closeReportModal()">
+    <div class="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+        <div class="report-modal-header">
+            <h3 class="report-modal-title" id="report-modal-title" data-i18n="reportTitle">Сообщить о проблеме</h3>
+            <button class="modal-close" type="button" onclick="closeReportModal()" aria-label="Close">×</button>
+        </div>
+        <p class="report-modal-project" id="report-project-title"></p>
+        <select id="report-reason" aria-label="Report reason">
+            <option value="scam" data-i18n="reportScam">Мошенничество</option>
+            <option value="impersonation" data-i18n="reportImpersonation">Выдаёт себя за другой проект</option>
+            <option value="invalid_link" data-i18n="reportInvalidLink">Недействующая ссылка</option>
+            <option value="spam" data-i18n="reportSpam">Спам или нежелательный контент</option>
+            <option value="other" data-i18n="reportOther">Другая проблема</option>
+        </select>
+        <textarea id="report-description" maxlength="1000" rows="4" data-i18n-placeholder="reportDescription" placeholder="Опишите проблему (необязательно)"></textarea>
+        <button class="btn" id="report-submit-button" type="button" onclick="submitProjectReport(this)" data-i18n="sendReport">Отправить жалобу</button>
+    </div>
+</div>
+<div class="bottom-nav" id="bottom-nav">
+    <div class="nav-item active" onclick="switchTab('home',this)"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span data-i18n="home">Главная</span></div>
+    <div class="nav-item" onclick="switchTab('catalog',this)"><svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg><span data-i18n="catalogShort">Каталог</span></div>
+    <div class="nav-item" onclick="switchTab('add',this)"><svg viewBox="0 0 24 24"><path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><span data-i18n="add">Добавить</span></div>
+    <div class="nav-item" onclick="switchTab('profile',this)"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span data-i18n="profile">Профиль</span></div>
+</div>
+<div class="toast-container" id="toast-container"></div>
+<script>
+const tg=window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+let isAdmin=false;
+let isTrusted=false;
+let hasRequested=false;
+let pollAdminInterval=null;
+let pollProfileInterval=null;
+let pollAddInterval=null;
+let founderRefreshInterval=null;
+let founderGiftAnimation=null;
+let founderGiftDocumentId=null;
+let founderGiftFailedDocumentId=null;
+let founderGiftFailedAt=0;
+let founderProfileSignature=null;
+let founderProfileRequest=null;
+let founderGiftRequest=null;
+let lastCheckData=null;
+let catalogProjectsData=[];
+let adminUsersData=[];
+let adminProjectsData=[];
+
+const translations={
+ru:{
+    subtitle:'Проверяй. Подтверждай. Защищайся.',checkPlaceholder:'Ссылка или @username',checkButton:'Проверить',users:'Пользователи',projects:'Проектов',searchProjectsPlaceholder:'Поиск по названию, ссылке или описанию...',searchUsersPlaceholder:'Поиск по username или Telegram ID...',searchAdminProjectsPlaceholder:'Поиск по названию, ссылке, ID или статусу...',noSearchResults:'Ничего не найдено',recentChecks:'Последние проверки',noProjects:'Пока нет добавленных проектов',catalog:'Каталог проектов',loading:'Загрузка...',addProject:'Добавить проект',noRights:'У вас пока нет прав на добавление проектов.',requestAccess:'Запросить права у админа',requestSent:'Запрос отправлен (ожидайте)',projectName:'Название проекта',projectLink:'Ссылка или @username',channel:'Канал',bot:'Бот',group:'Группа',other:'Другое',description:'Описание (необязательно)',website:'Официальный сайт (необязательно)',submittedWebsite:'Сайт, указанный отправителем',submitModeration:'Отправить на модерацию',myProjects:'Мои проекты',noOwnProjects:'У вас пока нет проектов',editProject:'Редактировать',saveChanges:'Сохранить изменения',editProjectTitle:'Название проекта',editProjectLink:'Telegram-ссылка',editProjectCategory:'Категория',editProjectDescription:'Описание',editProjectWebsite:'Сайт проекта',projectUpdated:'Изменения сохранены и отправлены на повторную модерацию',projectNoChanges:'Изменений нет',websiteLabel:'Сайт проекта',reportProject:'Сообщить о проблеме',reportTitle:'Сообщить о проблеме',reportScam:'Мошенничество',reportImpersonation:'Выдаёт себя за другой проект',reportInvalidLink:'Недействующая ссылка',reportSpam:'Спам или нежелательный контент',reportOther:'Другая проблема',reportDescription:'Опишите проблему (необязательно)',sendReport:'Отправить жалобу',reportSent:'Жалоба отправлена на рассмотрение',reportDuplicate:'Вы уже отправили жалобу на этот проект',reportLimit:'Достигнут лимит жалоб на 24 часа',reports:'Жалобы',noReports:'Нет новых жалоб',reportAuthor:'Отправитель',reportReason:'Причина',reportReviewed:'Жалоба отмечена как рассмотренная',reportDismissed:'Жалоба отклонена',markReviewed:'Рассмотрено',dismissReport:'Отклонить жалобу',adminPanel:'Админ-панель',requests:'Заявки',allProjects:'Все проекты',home:'Главная',catalogShort:'Каталог',add:'Добавить',profile:'Профиль',admin:'Админ',checkProgress:'Проверка...',telegramExists:'Существует в Telegram',telegramNotFound:'Не найден в Telegram',checkUnavailable:'Не удалось проверить',resourceFound:'Ресурс найден в Telegram',type:'Тип',link:'Ссылка',published:'Опубликован в каталоге LINKCHECK',notPublished:'Не опубликован в каталоге LINKCHECK',pendingInfo:'Заявка ещё проходит модерацию',rejectedInfo:'Заявка была отклонена',usernameMissing:'Username не зарегистрирован в Telegram',telegramUnavailable:'Telegram временно недоступен. Попробуйте позже.',checkError:'Ошибка проверки',noRightsToast:'Не удалось отправить запрос',requestSentToast:'Запрос отправлен админу',serverError:'Ошибка сервера. Попробуйте позже',fillFields:'Заполните название и ссылку',telegramChecking:'Проверка Telegram...',projectSent:'Заявка отправлена',projectSentVerified:'Telegram подтвердил подлинность ресурса своей галочкой. Заявка отправлена на модерацию.',projectSentFound:'Ресурс найден в Telegram, но галочка Telegram не обнаружена. Заявка отправлена на модерацию.',projectSentUnavailable:'Заявка отправлена на модерацию. Проверка Telegram временно недоступна, поэтому галочка не установлена.',noRequests:'Нет заявок на модерацию',noUsers:'Нет пользователей',noProjectsInDatabase:'В базе нет проектов',newRequest:'Новая заявка на публикацию',noDescription:'Без описания',approve:'Одобрить проект',reject:'Отклонить проект',delete:'Удалить из базы',publishedShort:'✓ ОПУБЛИКОВАН',rejectedShort:'✕ ОТКЛОНЁН',moderationShort:'⏳ НА МОДЕРАЦИИ',projectPublished:'✓ Проект опубликован',projectRejected:'✕ Отклонён',waitingModeration:'⏳ Ожидает модерации',requestAccessBadge:'Запрашивает доступ',noUsername:'без_юзернейма',giveRights:'Разрешить добавление',takeRights:'Забрать права',rightsGranted:'Права выданы',rightsTaken:'Права забраны',projectApprovedToast:'Проект опубликован',projectRejectedToast:'Проект отклонён',projectDeletedToast:'Проект удалён',actionDone:'Готово',confirmDelete:'Вы уверены, что хотите удалить этот проект?',contactError:'Не удалось связаться с сервером',loadingCatalogError:'Не удалось загрузить каталог',usersLoadError:'Ошибка загрузки пользователей',requestsLoadError:'Ошибка загрузки заявок',projectsLoadError:'Ошибка загрузки каталога',projectTypeUser:'Пользователь',projectTypeChannel:'Канал',projectTypeGroup:'Группа',projectTypeBot:'Бот',projectTypeOther:'Другой ресурс',publishedCatalog:'✓ ОПУБЛИКОВАН',catalogEmpty:'Каталог пуст',id:'ID',projectTypeUnknown:'Не определён',accessDenied:'Недостаточно прав для выполнения действия',requestFailed:'Не удалось выполнить запрос',networkError:'Ошибка соединения. Проверьте интернет',unknownError:'Произошла неизвестная ошибка',officialBadge:'ОФИЦИАЛЬНЫЙ РЕСУРС',officialQueue:'OFFICIAL RESOURCE',officialRequest:'Запросить OFFICIAL RESOURCE',officialRequestTitle:'Подтверждение официальности проекта',officialSourcePlaceholder:'Ссылка на официальный сайт или независимый источник',officialNotePlaceholder:'Пояснение (необязательно)',officialRequestSend:'Отправить на проверку',officialRequestPending:'Заявка OFFICIAL RESOURCE ожидает проверки администратора',officialRequestRejected:'Предыдущий запрос OFFICIAL RESOURCE отклонён',officialRequestConfirmed:'Статус OFFICIAL RESOURCE подтверждён',officialRequestNeedPublish:'Сначала проект должен быть опубликован в каталоге LINKCHECK',officialRequestHint:'Укажите страницу, где размещена ссылка на этот Telegram-ресурс. Автопроверка помогает модератору, но не присваивает официальный статус автоматически.',officialQueueDisclaimer:'Автоматический анализ — только подсказка. Перед одобрением проверьте, действительно ли источник принадлежит проекту или является независимым надёжным подтверждением.',officialAutoCheck:'Результат автоматической проверки',officialSource:'Источник',officialRequester:'Заявитель',officialApprove:'Подтвердить OFFICIAL RESOURCE',officialReject:'Отклонить запрос',officialReviewNote:'Комментарий модератора / основание для ручного решения',officialNoQueue:'Нет заявок на OFFICIAL RESOURCE',officialRequestSent:'Заявка отправлена администратору',officialApprovalDone:'Статус OFFICIAL RESOURCE подтверждён',officialRejectionDone:'Запрос OFFICIAL RESOURCE отклонён',telegramBadge:'ВЕРИФИЦИРОВАН TELEGRAM',linkcheckBadgeTitle:'Фирменный знак LINKCHECK',linkcheckBadgeDescription:'Этот круглый знак — фирменная отметка LINKCHECK. Он показывает, что проект получил знак доверия внутри нашей платформы. Это не системная галочка Telegram.',linkcheckBadgeOfficial:'Значок выдан автоматически после подтверждения статуса OFFICIAL RESOURCE.',linkcheckBadgeManual:'Значок вручную выдан администрацией LINKCHECK.',linkcheckBadgeAutoLabel:'Фирменный значок выдан автоматически',linkcheckBadgeManualLabel:'Фирменный значок выдан вручную',linkcheckBadgeGrant:'Выдать фирменный значок',linkcheckBadgeRevoke:'Снять ручную выдачу',linkcheckBadgeReason:'Основание или внутренний комментарий (необязательно)',linkcheckBadgeGranted:'Фирменный значок выдан',linkcheckBadgeRevoked:'Ручная выдача фирменного значка снята',submittedAt:'Отправлено',noOfficialBadge:'Официальность не подтверждена',sourceLabel:'Источник подтверждения',founderLabel:'СОЗДАТЕЛЬ LINKCHECK',founderRole:'Основатель проекта',founderContact:'Написать сообщение',founderCaption:'По важным вопросам, предложениям и сотрудничеству',subscribersCount:'Подписчиков',membersCount:'Участников',catalogRecordFound:'Найдено в LINKCHECK',foundInCatalog:'Ресурс найден в локальной базе LINKCHECK',catalogRecordPending:'Запись найдена, но ещё ожидает модерации',catalogRecordRejected:'Запись есть в базе, но была отклонена',invalidLink:'Укажите корректную ссылку или username',usernameFormat:'Введите username, @username или ссылку t.me/username',unsupportedLink:'Поддерживаются только username и ссылки t.me',linkHasParameters:'Укажите публичную ссылку без параметров',publicUsernameOnly:'Укажите публичный username без дополнительных путей',invalidUsername:'Некорректный Telegram username',usernameMissingServer:'Такой публичный username не найден в Telegram',wrongResourceType:'Ресурс существует, но его тип не соответствует выбранной категории',duplicateProject:'Этот ресурс уже есть в базе',noAddPermission:'У вас пока нет прав на добавление проектов',titleValidation:'Название обязательно и должно быть не длиннее 80 символов',descriptionValidation:'Описание не должно превышать 1000 символов',categoryValidation:'Некорректная категория',websiteValidation:'Некорректный адрес сайта',websiteProtocol:'Сайт должен начинаться с https:// или http://',authExpired:'Telegram-авторизация устарела. Переоткройте приложение',unauthorized:'Необходима авторизация через Telegram',forbidden:'Недостаточно прав для выполнения действия',invalidRequest:'Некорректный запрос',internalServerError:'Внутренняя ошибка сервера',requestTooLarge:'Слишком большой запрос',moderationLog:'Журнал действий',moderationLogEmpty:'История действий пока пуста',moderationLogLoadError:'Не удалось загрузить журнал действий',moderationAdmin:'Администратор',moderationProject:'Проект',moderationAction:'Действие',moderationDetails:'Детали'
+},
+en:{
+    subtitle:'Check. Verify. Protect.',checkPlaceholder:'Link or @username',checkButton:'Check',users:'Users',projects:'Projects',searchProjectsPlaceholder:'Search by name, link or description...',searchUsersPlaceholder:'Search by username or Telegram ID...',searchAdminProjectsPlaceholder:'Search by name, link, ID or status...',noSearchResults:'Nothing found',recentChecks:'Recent checks',noProjects:'No projects have been added yet',catalog:'Project catalog',loading:'Loading...',addProject:'Add project',noRights:'You do not have permission to add projects yet.',requestAccess:'Request access from admin',requestSent:'Request sent (please wait)',projectName:'Project name',projectLink:'Link or @username',channel:'Channel',bot:'Bot',group:'Group',other:'Other',description:'Description (optional)',website:'Official website (optional)',submittedWebsite:'Website supplied by submitter',submitModeration:'Submit for moderation',myProjects:'My projects',noOwnProjects:'You have no projects yet',editProject:'Edit project',saveChanges:'Save changes',editProjectTitle:'Project name',editProjectLink:'Telegram link',editProjectCategory:'Category',editProjectDescription:'Description',editProjectWebsite:'Project website',projectUpdated:'Changes saved and submitted for review again',projectNoChanges:'No changes to save',websiteLabel:'Project website',reportProject:'Report a problem',reportTitle:'Report a problem',reportScam:'Scam or fraud',reportImpersonation:'Impersonating another project',reportInvalidLink:'Broken or invalid link',reportSpam:'Spam or unwanted content',reportOther:'Other issue',reportDescription:'Describe the issue (optional)',sendReport:'Submit report',reportSent:'Your report has been submitted for review',reportDuplicate:'You have already reported this project',reportLimit:'You have reached the 24-hour report limit',reports:'Reports',noReports:'No new reports',reportAuthor:'Submitted by',reportReason:'Reason',reportReviewed:'Report marked as reviewed',reportDismissed:'Report dismissed',markReviewed:'Mark reviewed',dismissReport:'Dismiss report',adminPanel:'Admin panel',requests:'Requests',allProjects:'All projects',home:'Home',catalogShort:'Catalog',add:'Add',profile:'Profile',admin:'Admin',checkProgress:'Checking...',telegramExists:'Exists on Telegram',telegramNotFound:'Not found on Telegram',checkUnavailable:'Could not verify',resourceFound:'Resource found on Telegram',type:'Type',link:'Link',published:'Published in the LINKCHECK catalog',notPublished:'Not published in the LINKCHECK catalog',pendingInfo:'The application is still under moderation',rejectedInfo:'The application was rejected',usernameMissing:'This username is not registered on Telegram',telegramUnavailable:'Telegram is temporarily unavailable. Try again later.',checkError:'Check error',noRightsToast:'Could not send the request',requestSentToast:'Request sent to admin',serverError:'Server error. Please try again later',fillFields:'Enter the project name and link',telegramChecking:'Checking Telegram...',projectSent:'Request submitted',projectSentVerified:'Telegram has verified this resource. Your request has been submitted for moderation.',projectSentFound:'The resource exists on Telegram, but no Telegram verification badge was detected. Your request has been submitted for moderation.',projectSentUnavailable:'Your request has been submitted for moderation. Telegram verification is temporarily unavailable, so no verification badge was added.',noRequests:'No moderation requests',noUsers:'No users',noProjectsInDatabase:'There are no projects in the database',newRequest:'New publication request',noDescription:'No description',approve:'Approve project',reject:'Reject project',delete:'Delete from database',publishedShort:'✓ PUBLISHED',rejectedShort:'✕ REJECTED',moderationShort:'⏳ UNDER REVIEW',projectPublished:'✓ Project published',projectRejected:'✕ Rejected',waitingModeration:'⏳ Awaiting moderation',requestAccessBadge:'Access requested',noUsername:'no_username',giveRights:'Grant permission',takeRights:'Revoke permission',rightsGranted:'Permission granted',rightsTaken:'Permission revoked',projectApprovedToast:'Project published',projectRejectedToast:'Project rejected',projectDeletedToast:'Project deleted',actionDone:'Done',confirmDelete:'Are you sure you want to delete this project?',contactError:'Could not connect to the server',loadingCatalogError:'Could not load catalog',usersLoadError:'Error loading users',requestsLoadError:'Error loading requests',projectsLoadError:'Error loading catalog',projectTypeUser:'User',projectTypeChannel:'Channel',projectTypeGroup:'Group',projectTypeBot:'Bot',projectTypeOther:'Other resource',publishedCatalog:'✓ PUBLISHED',catalogEmpty:'The catalog is empty',id:'ID',projectTypeUnknown:'Unknown',accessDenied:'You do not have permission to perform this action',requestFailed:'The request could not be completed',networkError:'Connection error. Check your internet connection',unknownError:'An unknown error occurred',officialBadge:'OFFICIAL RESOURCE',officialQueue:'OFFICIAL RESOURCE',officialRequest:'Request OFFICIAL RESOURCE',officialRequestTitle:'Verify project official status',officialSourcePlaceholder:'Official website or independent source URL',officialNotePlaceholder:'Additional explanation (optional)',officialRequestSend:'Submit for review',officialRequestPending:'OFFICIAL RESOURCE request is awaiting administrator review',officialRequestRejected:'The previous OFFICIAL RESOURCE request was rejected',officialRequestConfirmed:'OFFICIAL RESOURCE status confirmed',officialRequestNeedPublish:'The project must be published in the LINKCHECK catalog first',officialRequestHint:'Provide a page that links to this Telegram resource. The automatic check assists the moderator but never grants official status by itself.',officialQueueDisclaimer:'Automatic analysis is only an aid. Before approval, verify that the source really belongs to the project or is reliable independent evidence.',officialAutoCheck:'Automatic check result',officialSource:'Source',officialRequester:'Requester',officialApprove:'Confirm OFFICIAL RESOURCE',officialReject:'Reject request',officialReviewNote:'Moderator note / reason for a manual decision',officialNoQueue:'No OFFICIAL RESOURCE requests',officialRequestSent:'Request sent to the administrator',officialApprovalDone:'OFFICIAL RESOURCE status confirmed',officialRejectionDone:'OFFICIAL RESOURCE request rejected',telegramBadge:'TELEGRAM VERIFIED',linkcheckBadgeTitle:'LINKCHECK branded badge',linkcheckBadgeDescription:'This circular mark is the LINKCHECK branded badge. It means the project has received a trust mark inside our platform. It is not a native Telegram verification checkmark.',linkcheckBadgeOfficial:'The badge is granted automatically after OFFICIAL RESOURCE status is confirmed.',linkcheckBadgeManual:'The badge was manually granted by LINKCHECK administration.',linkcheckBadgeAutoLabel:'Branded badge granted automatically',linkcheckBadgeManualLabel:'Branded badge granted manually',linkcheckBadgeGrant:'Grant branded badge',linkcheckBadgeRevoke:'Revoke manual grant',linkcheckBadgeReason:'Reason or internal note (optional)',linkcheckBadgeGranted:'Branded badge granted',linkcheckBadgeRevoked:'Manual badge grant revoked',submittedAt:'Submitted',noOfficialBadge:'Official status not confirmed',sourceLabel:'Verification source',founderLabel:'LINKCHECK FOUNDER',founderRole:'Project founder',founderContact:'Send a message',founderCaption:'For important questions, suggestions and partnerships',subscribersCount:'Subscribers',membersCount:'Members',catalogRecordFound:'Found in LINKCHECK',foundInCatalog:'Resource found in the local LINKCHECK database',catalogRecordPending:'The record was found but is still awaiting moderation',catalogRecordRejected:'The record exists in the database but was rejected',invalidLink:'Enter a valid link or username',usernameFormat:'Enter a username, @username or t.me/username link',unsupportedLink:'Only Telegram usernames and t.me links are supported',linkHasParameters:'Enter a public link without query parameters',publicUsernameOnly:'Enter a public username without additional paths',invalidUsername:'Invalid Telegram username',usernameMissingServer:'This public username was not found on Telegram',wrongResourceType:'The resource exists, but its type does not match the selected category',duplicateProject:'This resource is already in the database',noAddPermission:'You do not have permission to add projects yet',titleValidation:'A project name is required and must be no longer than 80 characters',descriptionValidation:'The description must not exceed 1,000 characters',categoryValidation:'Invalid project category',websiteValidation:'Invalid website address',websiteProtocol:'The website address must start with https:// or http://',authExpired:'Your Telegram authorization has expired. Reopen the app',unauthorized:'Telegram authorization is required',forbidden:'You do not have permission to perform this action',invalidRequest:'Invalid request',internalServerError:'Internal server error',requestTooLarge:'The request is too large',moderationLog:'Action log',moderationLogEmpty:'There are no actions in the history yet',moderationLogLoadError:'Could not load the action log',moderationAdmin:'Administrator',moderationProject:'Project',moderationAction:'Action',moderationDetails:'Details'
+}
+};
+
+Object.assign(translations.ru,{
+    telegramSetupMissing:'Серверная проверка Telegram не настроена. Проверьте TG_API_ID и TG_API_HASH в .env.',
+    telegramTelethonMissing:'На сервере не установлен или недоступен модуль Telethon.',
+    telegramConnectionFailed:'Не удалось подключить Telegram-проверку. Проверьте журнал запуска и файл сессии Telethon.',
+    telegramRateLimited:'Telegram временно ограничил частоту запросов. LINKCHECK соблюдает паузу Telegram.',
+    telegramNotReady:'Подключение к Telegram ещё не готово. Проверьте состояние сервера.',
+    telegramNoReliableAnswer:'Telegram не вернул достоверный ответ. Это не означает, что ресурс не существует.',
+    telegramRetryAfter:'Повторная проверка будет доступна примерно через {seconds} сек.',
+    catalogTypeAll:'Все типы',catalogStatusAll:'Все статусы',catalogStatusTelegram:'Telegram Verified',
+    catalogStatusOfficial:'OFFICIAL RESOURCE',catalogStatusOwnership:'OWNERSHIP VERIFIED',
+    catalogStatusBadge:'Бейдж LINKCHECK',catalogStatusNone:'Без подтверждений',
+    catalogSortRecommended:'По умолчанию',catalogSortNewest:'Сначала новые',
+    catalogSortOfficial:'Сначала OFFICIAL',catalogSortVerified:'Сначала верифицированные',
+    catalogSortChecked:'Недавно проверенные',catalogFoundCount:'Найдено проектов',
+    catalogLastChecked:'Последняя проверка',noCheckHistory:'Вы ещё не проверяли ресурсы',
+    repeatCheck:'Проверить снова',checkHistoryLoadError:'Не удалось загрузить историю проверок'
+});
+Object.assign(translations.en,{
+    telegramSetupMissing:'Telegram verification is not configured on the server. Check TG_API_ID and TG_API_HASH in .env.',
+    telegramTelethonMissing:'The Telethon module is not installed or unavailable on the server.',
+    telegramConnectionFailed:'Could not connect Telegram verification. Check the startup log and Telethon session file.',
+    telegramRateLimited:'Telegram has temporarily limited request frequency. LINKCHECK is respecting Telegram’s cooldown.',
+    telegramNotReady:'The Telegram connection is not ready yet. Check the server status.',
+    telegramNoReliableAnswer:'Telegram did not return a reliable result. This does not mean the resource does not exist.',
+    telegramRetryAfter:'You can retry in about {seconds} seconds.',
+    catalogTypeAll:'All types',catalogStatusAll:'All statuses',catalogStatusTelegram:'Telegram Verified',
+    catalogStatusOfficial:'OFFICIAL RESOURCE',catalogStatusOwnership:'OWNERSHIP VERIFIED',
+    catalogStatusBadge:'LINKCHECK badge',catalogStatusNone:'No confirmations',
+    catalogSortRecommended:'Default order',catalogSortNewest:'Newest first',
+    catalogSortOfficial:'OFFICIAL first',catalogSortVerified:'Verified first',
+    catalogSortChecked:'Recently checked',catalogFoundCount:'Projects found',
+    catalogLastChecked:'Last checked',noCheckHistory:'You have not checked any resources yet',
+    repeatCheck:'Check again',checkHistoryLoadError:'Could not load check history'
+});
+
+// Ownership verification labels.
+Object.assign(translations.ru,{
+    ownershipVerified:'Владение подтверждено',
+    ownershipUnverified:'Владение не подтверждено',
+    ownershipStart:'Подтвердить владение',
+    ownershipHelpLabel:'Как это работает',
+    ownershipHelpText:'Для канала или группы: добавьте @linkcheck_verify_bot администратором без лишних прав и нажмите «Проверить через Telegram». LINKCHECK проверит, что ваш аккаунт — владелец или администратор ресурса.\n\nДля бота: нажмите «Подтвердить владение», откройте BotFather и перейдите в /mybots. Выберите своего бота и сделайте скриншот меню управления. Вернитесь в LINKCHECK, выберите изображение и загрузите его прямо в Mini App. Заявка появится в отдельной вкладке админ-панели. Не показывайте API-токен.\n\nДля сайта: добавьте TXT-запись в DNS домена. Она не отображается на странице сайта и не меняет его содержимое. После обновления DNS нажмите «Проверить DNS».\n\nЕсли эти способы недоступны или это личный/закрытый чат, используйте кнопку «Запросить ручную проверку» ниже и объясните ситуацию.',
+    ownershipMethodsTitle:'Выберите способ подтверждения',
+    ownershipTelegramMethod:'Проверить через Telegram',
+    ownershipTelegramHint:'Бот должен быть администратором канала или группы',
+    ownershipDnsMethod:'Проверить DNS-запись',
+    ownershipDnsHint:'Добавьте TXT-запись в настройках DNS домена',
+    ownershipDnsRecord:'Имя TXT-записи',
+    ownershipDnsValue:'Значение TXT-записи',
+    ownershipCopy:'Копировать',
+    ownershipDnsReady:'Запись создана. Она действует 24 часа.',
+    ownershipDnsNotFound:'DNS-запись пока не найдена. Подождите обновления DNS и повторите проверку.',
+    ownershipNoMethods:'Для этого проекта нет автоматического способа подтверждения. Нажмите «Запросить ручную проверку» и объясните ситуацию.',
+    ownershipManualToggle:'Не получается подтвердить автоматически? Запросить ручную проверку',
+    ownershipManualPlaceholder:'Опишите ситуацию: например, это личный или закрытый чат, ссылка недоступна либо инструкция не подходит. Не отправляйте пароли и API-токены.',
+    ownershipManualSend:'Отправить запрос администратору',
+    ownershipManualTooShort:'Добавьте пояснение минимум из 10 символов',
+    ownershipManualAlreadyPending:'Заявка уже ожидает решения администратора',
+    ownershipManualRateLimit:'Лимит ручных запросов: не более 3 за 24 часа',
+    ownershipManualSubmitted:'Запрос отправлен. Администратор проверит владение вручную',
+    ownershipManualPending:'Заявка ожидает ручной проверки администратором',
+    ownershipManualRequestType:'Ручная проверка',
+    ownershipManualReason:'Пояснение владельца',
+    ownershipManualAdminNote:'Внутренний комментарий модератора (необязательно)',
+    ownershipManualNoScreenshot:'Скриншот не требуется: владелец запросил ручную проверку',
+    ownershipManualOpenOwner:'Открыть профиль владельца',
+    ownershipBotTitle:'Подтверждение бота через BotFather',
+    ownershipBotSteps:'1. Откройте BotFather и нажмите /mybots.\n2. Выберите именно своего бота.\n3. Сделайте скриншот меню управления ботом.\n4. Вернитесь в LINKCHECK и выберите этот скриншот.\n5. Загрузите изображение прямо в Mini App.',
+    ownershipBotOpenFather:'Открыть BotFather',
+    ownershipBotSendScreenshot:'Загрузить скриншот',
+    ownershipBotManualNote:'После загрузки изображение появится в очереди модерации внутри LINKCHECK.',
+    ownershipBotSecurityNote:'Не показывайте и не отправляйте API-токен. Если он попал на скриншот, удалите изображение и сделайте новый снимок.',ownershipQueue:'Проверка владения',ownershipNoQueue:'Нет заявок на подтверждение владения',ownershipScreenshot:'Скриншот BotFather',ownershipClickToEnlarge:'Нажмите на изображение, чтобы увеличить',ownershipApprove:'Подтвердить владение',ownershipReject:'Отклонить',ownershipPending:'Заявка ожидает проверки администратором',ownershipNeedUpload:'Ожидает загрузки скриншота',ownershipRejectedStatus:'Последняя заявка отклонена. Можно отправить новую',ownershipChooseFile:'Выбрать скриншот',ownershipUploadButton:'Загрузить скриншот',ownershipFileRequired:'Сначала выберите скриншот',ownershipFileTooLarge:'Размер изображения не должен превышать 8 МБ',ownershipUploadSuccess:'Скриншот отправлен на проверку',ownershipActionApproved:'Владение подтверждено',ownershipActionRejected:'Подтверждение отклонено',ownershipNoImage:'Не удалось загрузить изображение',
+    ownershipSuccess:'Владение проектом подтверждено',
+    ownershipError:'Не удалось подтвердить владение',
+    ownershipLegacyServer:'Маршруты подтверждения владения не найдены. Перезапустите обновлённый main.py.'
+});
+Object.assign(translations.en,{
+    ownershipHelpLabel:'How it works',
+    ownershipHelpText:'For a channel or group: add @linkcheck_verify_bot as an administrator without unnecessary permissions, then tap “Verify with Telegram”. LINKCHECK checks whether your account is the owner or an administrator.\n\nFor a bot: tap “Verify ownership”, open BotFather and go to /mybots. Select your bot and take a screenshot of its management menu. Return to LINKCHECK, choose the image and upload it directly in the Mini App. The request will appear in a separate admin panel tab. Do not show your API token.\n\nFor a website: add a TXT record in your domain DNS settings. It does not appear on the website page or change its content. After DNS updates, tap “Verify DNS”.\n\nIf these methods are unavailable or the resource is a private chat, use the “Request manual review” option below and explain the situation.',
+    ownershipMethodsTitle:'Choose a verification method',
+    ownershipTelegramMethod:'Verify with Telegram',
+    ownershipTelegramHint:'The bot must be an administrator in the channel or group',
+    ownershipDnsMethod:'Verify DNS record',
+    ownershipDnsHint:'Add a TXT record in your domain DNS settings',
+    ownershipDnsRecord:'TXT record name',
+    ownershipDnsValue:'TXT record value',
+    ownershipCopy:'Copy',
+    ownershipDnsReady:'The record is valid for 24 hours.',
+    ownershipDnsNotFound:'The DNS record was not found yet. Wait for DNS propagation and try again.',
+    ownershipNoMethods:'No automatic verification method is available for this project. Tap “Request manual review” and explain the situation.',
+    ownershipManualToggle:'Can’t verify automatically? Request a manual review',
+    ownershipManualPlaceholder:'Describe the situation: for example, this is a private chat, the link is inaccessible, or the instructions do not apply. Do not send passwords or API tokens.',
+    ownershipManualSend:'Send request to administrator',
+    ownershipManualTooShort:'Add an explanation of at least 10 characters',
+    ownershipManualAlreadyPending:'A request is already waiting for an administrator decision',
+    ownershipManualRateLimit:'Manual review limit: no more than 3 requests in 24 hours',
+    ownershipManualSubmitted:'Request submitted. An administrator will review ownership manually',
+    ownershipManualPending:'Request is waiting for manual administrator review',
+    ownershipManualRequestType:'Manual review',
+    ownershipManualReason:'Owner explanation',
+    ownershipManualAdminNote:'Internal moderator note (optional)',
+    ownershipManualNoScreenshot:'No screenshot required: the owner requested a manual review',
+    ownershipManualOpenOwner:'Open owner profile',
+    ownershipBotTitle:'Verify bot through BotFather',
+    ownershipBotSteps:'1. Open BotFather and tap /mybots.\n2. Select your bot.\n3. Take a screenshot of its management menu.\n4. Return to LINKCHECK and select the screenshot.\n5. Upload the image directly in the Mini App.',
+    ownershipBotOpenFather:'Open BotFather',
+    ownershipBotSendScreenshot:'Upload screenshot',
+    ownershipBotManualNote:'After uploading, the image will appear in the LINKCHECK moderation queue.',
+    ownershipBotSecurityNote:'Do not show or send your API token. If it appears in the screenshot, delete the image and take a new one.',ownershipQueue:'Ownership review',ownershipNoQueue:'No ownership requests to review',ownershipScreenshot:'BotFather screenshot',ownershipClickToEnlarge:'Tap the image to enlarge',ownershipApprove:'Confirm ownership',ownershipReject:'Reject',ownershipPending:'Request is waiting for administrator review',ownershipNeedUpload:'Waiting for screenshot upload',ownershipRejectedStatus:'The last request was rejected. You can submit a new one',ownershipChooseFile:'Choose screenshot',ownershipUploadButton:'Upload screenshot',ownershipFileRequired:'Choose a screenshot first',ownershipFileTooLarge:'Image size must not exceed 8 MB',ownershipUploadSuccess:'Screenshot submitted for review',ownershipActionApproved:'Ownership confirmed',ownershipActionRejected:'Ownership request rejected',ownershipNoImage:'Could not load image',
+    ownershipSuccess:'Project ownership verified',
+    ownershipError:'Could not verify project ownership',
+    ownershipLegacyServer:'Ownership verification routes are missing. Restart the updated main.py.'
+});
+
+Object.assign(translations.ru,{privacyPolicy:'Политика конфиденциальности'});
+Object.assign(translations.en,{privacyPolicy:'Privacy Policy'});
+
+function openPrivacyPolicy(){
+    const modal=document.getElementById('privacy-modal');
+    const frame=document.getElementById('privacy-frame');
+    if(!modal||!frame)return;
+    frame.src='/privacy?lang='+encodeURIComponent(currentLanguage);
+    modal.classList.add('open');
+}
+function closePrivacyPolicy(){
+    const modal=document.getElementById('privacy-modal');
+    const frame=document.getElementById('privacy-frame');
+    if(modal)modal.classList.remove('open');
+    if(frame)frame.src='about:blank';
+}
+
+function detectLanguage(){
+    try{const saved=localStorage.getItem('linkcheck_language');if(saved==='ru'||saved==='en')return saved}catch(e){}
+    const telegramLanguage=tg.initDataUnsafe?.user?.language_code;
+    if(telegramLanguage)return telegramLanguage.toLowerCase().startsWith('ru')?'ru':'en';
+    const browserLanguage=navigator.language||navigator.userLanguage||'ru';
+    return browserLanguage.toLowerCase().startsWith('ru')?'ru':'en';
+}
+let currentLanguage=detectLanguage();
+function t(key){return translations[currentLanguage][key]??translations.ru[key]??key}
+
+function localizeBackendMessage(message,fallbackKey='requestFailed'){
+    const raw=String(message??'').trim();
+    if(!raw)return t(fallbackKey);
+    if(currentLanguage==='ru')return raw;
+    const value=raw.toLowerCase();
+    const rules=[
+        [/серверная проверка telegram не настроена/i,'telegramSetupMissing'],
+        [/не установлен или недоступен модуль telethon/i,'telegramTelethonMissing'],
+        [/не удалось подключить telegram-проверку/i,'telegramConnectionFailed'],
+        [/telegram временно ограничил частоту запросов|telegram временно ограничил проверки/i,'telegramRateLimited'],
+        [/подключение к telegram еще не готово|подключение к telegram ещё не готово/i,'telegramNotReady'],
+        [/telegram не вернул достоверный ответ/i,'telegramNoReliableAnswer'],
+        [/укажите корректную ссылку или username/i,'invalidLink'],
+        [/введите username, @username или ссылку t\.me\/username/i,'usernameFormat'],
+        [/поддерживаются только username и ссылки t\.me/i,'unsupportedLink'],
+        [/публичную ссылку без параметров/i,'linkHasParameters'],
+        [/публичный username без дополнительных путей/i,'publicUsernameOnly'],
+        [/некорректный telegram username/i,'invalidUsername'],
+        [/не найден в telegram|не найден.*telegram/i,'usernameMissingServer'],
+        [/не соответствует категории|тип ресурса не соответствует/i,'wrongResourceType'],
+        [/этот ресурс уже есть в базе/i,'duplicateProject'],
+        [/нет прав на добавление проектов|пока нет прав на добавление/i,'noAddPermission'],
+        [/название обязательно/i,'titleValidation'],
+        [/описание не должно превышать/i,'descriptionValidation'],
+        [/некорректная категория/i,'categoryValidation'],
+        [/некорректный адрес сайта/i,'websiteValidation'],
+        [/сайт должен начинаться/i,'websiteProtocol'],
+        [/вы уже отправили жалобу/i,'reportDuplicate'],
+        [/достигнут лимит жалоб/i,'reportLimit'],
+        [/опишите, почему автоматическое подтверждение/i,'ownershipManualTooShort'],
+        [/заявка на ручную проверку или скриншот уже ожидает/i,'ownershipManualAlreadyPending'],
+        [/можно отправить не более 3 запросов на ручную проверку/i,'ownershipManualRateLimit'],
+        [/dns-запись пока не найдена|dns record.*not found/i,'ownershipDnsNotFound'],
+        [/добавьте @.*администратором|ваш аккаунт не является владельцем|не смог проверить участников/i,'ownershipError'],
+        [/для dns-подтверждения укажите|сначала нажмите.*подтвердить владение/i,'ownershipError'],
+        [/срок действия кода истёк/i,'ownershipError'],
+        [/сначала запросите код подтверждения/i,'ownershipError'],
+        [/авторизация устарела|переоткройте mini app|переоткройте приложение/i,'authExpired'],
+        [/unauthorized/i,'unauthorized'],
+        [/forbidden|нет прав администратора|недостаточно прав/i,'forbidden'],
+        [/некорректный json|некорректный запрос|некорректные параметры/i,'invalidRequest'],
+        [/внутренняя ошибка сервера/i,'internalServerError'],
+        [/слишком большой запрос/i,'requestTooLarge']
+    ];
+    for(const [pattern,key] of rules){if(pattern.test(value))return t(key)}
+    if(/^[a-z0-9\s.,:;!?"'()/_-]+$/i.test(raw))return raw;
+    return t(fallbackKey);
+}
+
+function setLanguage(language){
+    if(language!=='ru'&&language!=='en')return;
+    currentLanguage=language;
+    try{localStorage.setItem('linkcheck_language',language)}catch(e){}
+    document.documentElement.lang=language;
+    document.getElementById('lang-ru').classList.toggle('active',language==='ru');
+    document.getElementById('lang-en').classList.toggle('active',language==='en');
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+        const key=el.dataset.i18n;
+        if(translations[language][key])el.textContent=t(key);
+    });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el=>{
+        const key=el.dataset.i18nPlaceholder;
+        if(translations[language][key])el.placeholder=t(key);
+    });
+    document.title='LINKCHECK';
+    const privacyLink=document.getElementById('privacy-link');
+    if(privacyLink)privacyLink.href='/privacy?lang='+encodeURIComponent(language);
+    const privacyModal=document.getElementById('privacy-modal');
+    if(privacyModal&&privacyModal.classList.contains('open')){const privacyFrame=document.getElementById('privacy-frame');if(privacyFrame)privacyFrame.src='/privacy?lang='+encodeURIComponent(language)}
+    updateRequestButton();
+    updateAdminLabel();
+    if(lastCheckData)renderCheckResult(lastCheckData);
+    refreshCurrentScreen();
+}
+
+function updateRequestButton(){
+    const b=document.getElementById('request-access-btn');
+    if(!b)return;
+    b.innerText=hasRequested?t('requestSent'):t('requestAccess');
+}
+function updateAdminLabel(){
+    const adminLabel=document.querySelector('#admin-nav-item span');
+    if(adminLabel)adminLabel.textContent=t('admin');
+}
+function refreshCurrentScreen(){
+    const active=document.querySelector('.screen.active');
+    if(!active)return;
+    if(active.id==='screen-home')loadRecent();
+    else if(active.id==='screen-catalog')loadCatalog();
+    else if(active.id==='screen-profile')loadMyProjects();
+    else if(active.id==='screen-admin'){
+        const tab=document.querySelector('.admin-tab.active');
+        if(!tab)return;
+        if(tab.id==='tab-req')loadAdminRequests();
+        else if(tab.id==='tab-users')loadAdminUsers();
+        else if(tab.id==='tab-ownership')loadAdminOwnership();
+        else if(tab.id==='tab-official')loadAdminOfficial();
+        else if(tab.id==='tab-reports')loadAdminReports();
+        else if(tab.id==='tab-log')loadAdminModerationLog();
+        else loadAdminCatalog();
+    }
+}
+function showToast(message,type='success'){
+    const c=document.getElementById('toast-container');
+    const toast=document.createElement('div');
+    toast.className='toast '+type;
+    toast.innerText=message;
+    c.appendChild(toast);
+    setTimeout(()=>toast.remove(),3000);
+}
+function escapeHTML(v){
+    return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function safeExternalUrl(value){
+    try{
+        const url=new URL(String(value??'').trim());
+        if(url.protocol!=='http:'&&url.protocol!=='https:')return '';
+        if(!url.hostname||url.username||url.password)return '';
+        return url.href;
+    }catch(error){return ''}
+}
+function getHeaders(){return {'Content-Type':'application/json','Authorization':'tma '+(tg.initData||'')}}
+function getProjectType(type){
+    const types={user:'projectTypeUser',channel:'projectTypeChannel',group:'projectTypeGroup',bot:'projectTypeBot',other:'projectTypeOther'};
+    return t(types[type]||'projectTypeUnknown');
+}
+function renderLinkcheckBadgeButton(project){
+    if(!project||!project.linkcheck_badge)return '';
+    const source=project.linkcheck_badge_source==='official'?'official':'manual';
+    const label=t('linkcheckBadgeTitle');
+    return `<button class="linkcheck-badge-trigger" type="button" aria-label="${escapeHTML(label)}" title="${escapeHTML(label)}" onclick="openLinkcheckBadgeInfo(event,'${source}')"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" fill="#080808" stroke="#f4f4f4" stroke-width="1.8"/><path d="M16.1 8.7h4.8l-3.4 16.1h10.1l-1.2 4.1H11.1z" fill="#f4f4f4"/><path d="m23.4 17.6 6.1-6.1 2.2 2.2-6.1 6.1z" fill="#f4f4f4"/></svg></button>`;
+}
+function openLinkcheckBadgeInfo(event,source){
+    if(event){event.preventDefault();event.stopPropagation()}
+    const modal=document.getElementById('linkcheck-badge-modal');
+    const description=document.getElementById('linkcheck-badge-description');
+    const sourceBox=document.getElementById('linkcheck-badge-source');
+    if(!modal||!description||!sourceBox)return;
+    description.textContent=t('linkcheckBadgeDescription');
+    sourceBox.textContent=source==='official'?t('linkcheckBadgeOfficial'):t('linkcheckBadgeManual');
+    modal.style.display='flex';
+}
+function closeLinkcheckBadgeInfo(){
+    const modal=document.getElementById('linkcheck-badge-modal');
+    if(modal)modal.style.display='none';
+}
+function formatMoscowDateTime(value){
+    const raw=String(value??'').trim();
+    if(!raw)return '';
+    let normalized=raw.includes(' ')&&!raw.includes('T')?raw.replace(' ','T'):raw;
+    if(!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized))normalized+='Z';
+    const date=new Date(normalized);
+    if(Number.isNaN(date.getTime()))return raw;
+    const locale=currentLanguage==='ru'?'ru-RU':'en-GB';
+    const zoneLabel=currentLanguage==='ru'?' МСК':' MSK';
+    return new Intl.DateTimeFormat(locale,{
+        timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',year:'numeric',
+        hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+    }).format(date)+zoneLabel;
+}
+function renderAdminBadgeControls(project){
+    const id=Number(project.id);
+    const manual=!!project.linkcheck_badge_manual;
+    const official=!!project.is_official;
+    if(official){
+        const revokeManual=manual?`<button class="btn-admin btn-reject" type="button" onclick="adminSetProjectBadge(${id},'revoke',this)">${escapeHTML(t('linkcheckBadgeRevoke'))}</button>`:'';
+        return `<div class="linkcheck-badge-note">${escapeHTML(t('linkcheckBadgeAutoLabel'))}</div>${revokeManual?`<div class="admin-actions">${revokeManual}</div>`:''}`;
+    }
+    if(manual){
+        const issued=project.linkcheck_badge_manual_at?` · ${formatMoscowDateTime(project.linkcheck_badge_manual_at)}`:'';
+        const reason=project.linkcheck_badge_manual_reason?`<div class="linkcheck-badge-note">${escapeHTML(project.linkcheck_badge_manual_reason)}</div>`:'';
+        const by=project.linkcheck_badge_manual_by?` · ID ${Number(project.linkcheck_badge_manual_by)}`:'';
+        return `<div class="linkcheck-badge-note">${escapeHTML(t('linkcheckBadgeManualLabel')+issued+by)}</div>${reason}<div class="admin-actions"><button class="btn-admin btn-reject" type="button" onclick="adminSetProjectBadge(${id},'revoke',this)">${escapeHTML(t('linkcheckBadgeRevoke'))}</button></div>`;
+    }
+    return `<textarea id="linkcheck-badge-reason-${id}" maxlength="500" rows="2" placeholder="${escapeHTML(t('linkcheckBadgeReason'))}" style="width:100%;padding:9px;border:1px solid #333;border-radius:8px;background:#090909;color:#eee;font:inherit;font-size:11px;resize:vertical"></textarea><div class="admin-actions"><button class="btn-admin btn-approve" type="button" onclick="adminSetProjectBadge(${id},'grant',this)">${escapeHTML(t('linkcheckBadgeGrant'))}</button></div>`;
+}
+async function adminSetProjectBadge(projectId,action,button){
+    const reasonInput=document.getElementById(`linkcheck-badge-reason-${Number(projectId)}`);
+    const reason=reasonInput?.value?.trim()||'';
+    const oldText=button?.textContent||'';
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/admin/badge_action',{
+            method:'POST',headers:getHeaders(),
+            body:JSON.stringify({project_id:Number(projectId),action,reason})
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||data.message||t('requestFailed'));
+        showToast(action==='grant'?t('linkcheckBadgeGranted'):t('linkcheckBadgeRevoked'),'success');
+        await loadAdminCatalog();
+    }catch(error){
+        console.error('Admin LINKCHECK badge action error:',error);
+        showToast(error.message||t('requestFailed'),'error');
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+function renderProjectBadges(project){
+    let html=`<span class="project-badge badge-type">${escapeHTML(getProjectType(project.category))}</span>`;
+    if(project.is_official)html+=`<span class="project-badge badge-official">◆ ${escapeHTML(t('officialBadge'))}</span>`;
+    if(project.telegram_verified)html+=`<span class="project-badge badge-telegram">✓ ${escapeHTML(t('telegramBadge'))}</span>`;
+    return html;
+}
+function renderProjectCard(project,showPublished=true){
+    const description=project.description?`<div class="project-description">${escapeHTML(project.description)}</div>`:'';
+    const websiteUrl=safeExternalUrl(project.website);
+    const website=websiteUrl?`<a class="project-website" href="${escapeHTML(websiteUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('websiteLabel'))} ↗</a>`:'';
+    const sourceUrl=safeExternalUrl(project.source_url);
+    const source=sourceUrl?`<a class="project-source" href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('sourceLabel'))} ↗</a>`:'';
+    const published=showPublished?`<div class="catalog-published">${escapeHTML(t('publishedCatalog'))}</div>`:'';
+    const reportButton=showPublished?`<button class="btn-report" type="button" onclick="openReportModal(${Number(project.id)})">${escapeHTML(t('reportProject'))}</button>`:'';
+    const freshness=project.last_checked_at?`<div class="catalog-freshness">${escapeHTML(t('catalogLastChecked'))}: ${escapeHTML(formatMoscowDateTime(project.last_checked_at))}</div>`:'';
+    return `<div class="card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br><a href="https://t.me/${encodeURIComponent(String(project.link||'').replace(/^@/,''))}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;text-decoration:none">${escapeHTML(project.link)}</a><div class="project-badges">${renderProjectBadges(project)}</div>${description}${website}${source}${freshness}${published}${reportButton}</div>`;
+}
+
+function normalizeSearchText(value){return String(value??'').toLocaleLowerCase().replace(/ё/g,'е').trim()}
+function normalizeSearchLink(value){return String(value??'').toLocaleLowerCase().replace(/ё/g,'е').trim().replace(/^https?:\/\//,'').replace(/^(www\.)?(t\.me|telegram\.me)\//,'').replace(/^@/,'').replace(/[?#].*$/,'')}
+function matchesSearch(values,query){
+    const normalizedQuery=normalizeSearchText(query);
+    if(!normalizedQuery)return true;
+    const searchWithoutAt=normalizedQuery.replace(/^@/,'');
+    const searchable=values.filter(value=>value!==undefined&&value!==null).map(value=>normalizeSearchText(value)).join(' ');
+    const normalizedLinks=values.filter(value=>value!==undefined&&value!==null).map(value=>normalizeSearchLink(value)).join(' ');
+    return searchable.includes(normalizedQuery)||searchable.includes(searchWithoutAt)||normalizedLinks.includes(searchWithoutAt);
+}
+function filterCatalog(){
+    const list=document.getElementById('catalog-list');
+    const search=document.getElementById('catalog-search');
+    if(!list||!search)return;
+    const query=search.value.trim();
+    const typeFilter=document.getElementById('catalog-type-filter')?.value||'all';
+    const statusFilter=document.getElementById('catalog-status-filter')?.value||'all';
+    const sortFilter=document.getElementById('catalog-sort-filter')?.value||'recommended';
+    if(!catalogProjectsData.length){
+        const count=document.getElementById('catalog-results-count');if(count)count.textContent='';
+        list.innerHTML=`<div class="empty-state">${escapeHTML(t('catalogEmpty'))}</div>`;return;
+    }
+    const filtered=catalogProjectsData.filter(project=>{
+        const searchMatch=matchesSearch([
+            project.title,project.link,project.category,getProjectType(project.category),
+            project.description,project.website,project.topic,project.community_type,project.source_url
+        ],query);
+        if(!searchMatch)return false;
+        const rawCategory=String(project.category||'other').toLowerCase();
+        const normalizedCategory=['channel','bot','group'].includes(rawCategory)?rawCategory:'other';
+        if(typeFilter!=='all'&&normalizedCategory!==typeFilter)return false;
+        const hasTelegram=!!project.telegram_verified;
+        const hasOfficial=!!project.is_official;
+        const hasOwnership=String(project.ownership_status||'').toLowerCase()==='verified';
+        const hasBadge=!!project.linkcheck_badge;
+        if(statusFilter==='telegram'&&!hasTelegram)return false;
+        if(statusFilter==='official'&&!hasOfficial)return false;
+        if(statusFilter==='ownership'&&!hasOwnership)return false;
+        if(statusFilter==='badge'&&!hasBadge)return false;
+        if(statusFilter==='none'&&(hasTelegram||hasOfficial||hasOwnership||hasBadge))return false;
+        return true;
+    });
+    const dateValue=value=>{const time=Date.parse(String(value||''));return Number.isFinite(time)?time:0};
+    if(sortFilter==='newest')filtered.sort((a,b)=>dateValue(b.created_at)-dateValue(a.created_at));
+    else if(sortFilter==='official')filtered.sort((a,b)=>Number(!!b.is_official)-Number(!!a.is_official)||String(a.title||'').localeCompare(String(b.title||'')));
+    else if(sortFilter==='verified')filtered.sort((a,b)=>(Number(!!b.telegram_verified)+Number(String(b.ownership_status||'').toLowerCase()==='verified'))-(Number(!!a.telegram_verified)+Number(String(a.ownership_status||'').toLowerCase()==='verified'))||String(a.title||'').localeCompare(String(b.title||'')));
+    else if(sortFilter==='checked')filtered.sort((a,b)=>dateValue(b.last_checked_at)-dateValue(a.last_checked_at));
+    const count=document.getElementById('catalog-results-count');
+    if(count)count.textContent=`${t('catalogFoundCount')}: ${filtered.length} / ${catalogProjectsData.length}`;
+    if(!filtered.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noSearchResults'))}</div>`;return}
+    list.innerHTML=filtered.map(project=>renderProjectCard(project,true)).join('');
+}
+function filterAdminProjects(){
+    const list=document.getElementById('admin-projects-list');
+    const search=document.getElementById('admin-projects-search');
+    if(!list||!search)return;
+    const query=search.value.trim();
+    if(!adminProjectsData.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noProjectsInDatabase'))}</div>`;return}
+    const filtered=adminProjectsData.filter(project=>{
+        const moderationText=project.mod_status==='approved'?t('publishedShort'):project.mod_status==='rejected'?t('rejectedShort'):t('moderationShort');
+        return matchesSearch([
+            project.id,project.title,project.link,project.category,getProjectType(project.category),
+            project.description,project.website,project.owner_tg_id,project.ownership_status,
+            project.mod_status,moderationText,project.topic,project.community_type,project.source_url
+        ],query);
+    });
+    if(!filtered.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noSearchResults'))}</div>`;return}
+    list.innerHTML=filtered.map(project=>{
+        const status=project.mod_status==='approved'?`<span style="color:#4ade80">${escapeHTML(t('publishedShort'))}</span>`:project.mod_status==='rejected'?`<span style="color:#f87171">${escapeHTML(t('rejectedShort'))}</span>`:`<span style="color:#fbbf24">${escapeHTML(t('moderationShort'))}</span>`;
+        const websiteUrl=safeExternalUrl(project.website);
+        const website=websiteUrl?`<a class="project-website" href="${escapeHTML(websiteUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('websiteLabel'))} ↗</a>`:'';
+        const sourceUrl=safeExternalUrl(project.source_url);
+        const source=sourceUrl?`<a class="project-source" href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('sourceLabel'))} ↗</a>`:'';
+        const created=project.created_at?`<div class="linkcheck-badge-note">${escapeHTML(formatMoscowDateTime(project.created_at))}</div>`:'';
+        return `<div class="card admin-card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><span style="color:var(--silver);font-size:13px">${escapeHTML(project.link)}</span><div style="font-size:11px;color:#666">ID: ${Number(project.id)}</div><div class="project-badges">${renderProjectBadges(project)}</div><div>${status}</div>${created}${website}${source}${renderAdminBadgeControls(project)}<div class="admin-actions"><button class="btn-admin btn-delete" onclick="adminAction(${Number(project.id)},'delete')">${escapeHTML(t('delete'))}</button></div></div>`;
+    }).join('');
+}
+function filterAdminUsers(){
+    const list=document.getElementById('admin-users-list');
+    const search=document.getElementById('admin-users-search');
+    if(!list||!search)return;
+    const query=search.value.trim();
+    if(!adminUsersData.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noUsers'))}</div>`;return}
+    const filtered=adminUsersData.filter(user=>matchesSearch([
+        user.id,user.username,user.first_name,user.last_name,user.full_name,user.name,
+        user.is_trusted?'trusted':'untrusted',user.has_requested_access?'requested':''
+    ],query));
+    if(!filtered.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noSearchResults'))}</div>`;return}
+    list.innerHTML=filtered.map(user=>`<div class="card admin-card">${user.has_requested_access&&!user.is_trusted?`<div class="request-badge">${escapeHTML(t('requestAccessBadge'))}</div>`:''}<b>@${escapeHTML(user.username||t('noUsername'))}</b><span style="color:var(--silver);font-size:12px">${escapeHTML(t('id'))}: ${Number(user.id)}</span><div class="admin-actions">${user.is_trusted?`<button class="btn-admin btn-reject" onclick="toggleTrust(${Number(user.id)},'untrust')">${escapeHTML(t('takeRights'))}</button>`:`<button class="btn-admin btn-approve" onclick="toggleTrust(${Number(user.id)},'trust')">${escapeHTML(t('giveRights'))}</button>`}</div></div>`).join('');
+}
+
+function renderCheckResult(d){
+    if(!d)return;
+    const box=document.getElementById('check-result');
+    const badge=document.getElementById('status-badge');
+    const txt=document.getElementById('result-text');
+    box.style.display='block';
+    if(d.telegram_status==='catalog'){
+        badge.innerText=t('catalogRecordFound');
+        if(d.moderation==='approved')badge.className='status-badge status-verified';
+        else if(d.moderation==='rejected')badge.className='status-badge status-rejected';
+        else badge.className='status-badge status-pending';
+        let s=`${escapeHTML(t('foundInCatalog'))}<br>${escapeHTML(t('type'))}: ${escapeHTML(getProjectType(d.telegram_type))}<br>${escapeHTML(t('link'))}: ${escapeHTML(d.link)}<br>`;
+        if(d.title)s+=`<br><b>${escapeHTML(d.title)}</b><br>`;
+        if(d.telegram_verified)s+=`<div class="project-badges"><span class="project-badge badge-telegram">✓ ${escapeHTML(t('telegramBadge'))}</span></div>`;
+        if(d.is_official)s+=`<div class="project-badges"><span class="project-badge badge-official">◆ ${escapeHTML(t('officialBadge'))}</span></div>`;
+        if(d.moderation==='approved')s+=`<span class="publication-status">✓ ${escapeHTML(t('published'))}</span>`;
+        else if(d.moderation==='pending')s+=`<br><span style="color:var(--silver);font-size:12px">${escapeHTML(t('catalogRecordPending'))}</span>`;
+        else if(d.moderation==='rejected')s+=`<br><span style="color:var(--silver);font-size:12px">${escapeHTML(t('catalogRecordRejected'))}</span>`;
+        txt.innerHTML=s;return;
+    }
+    if(d.telegram_status==='exists'){
+        badge.innerText=t('telegramExists');badge.className='status-badge status-verified';
+        let s=`${escapeHTML(t('resourceFound'))}<br>${escapeHTML(t('type'))}: ${escapeHTML(getProjectType(d.telegram_type))}<br>${escapeHTML(t('link'))}: ${escapeHTML(d.link)}<br>`;
+        const memberCount=d.telegram_member_count;
+        const numericMemberCount=Number(memberCount);
+        if((d.telegram_type==='channel'||d.telegram_type==='group')&&memberCount!==null&&memberCount!==undefined&&Number.isFinite(numericMemberCount)&&numericMemberCount>=0){
+            const countKey=d.telegram_type==='channel'?'subscribersCount':'membersCount';
+            const numberLocale=currentLanguage==='ru'?'ru-RU':'en-US';
+            const formattedCount=new Intl.NumberFormat(numberLocale).format(numericMemberCount);
+            s+=`${escapeHTML(t(countKey))}: ${escapeHTML(formattedCount)}<br>`;
+        }
+        if(d.telegram_verified)s+=`<div class="project-badges"><span class="project-badge badge-telegram">✓ ${escapeHTML(t('telegramBadge'))}</span></div>`;
+        if(d.is_official)s+=`<div class="project-badges"><span class="project-badge badge-official">◆ ${escapeHTML(t('officialBadge'))}</span></div>`;
+        s+='<br>';
+        if(d.moderation==='approved')s+=`<b>${escapeHTML(d.title||'')}</b><br><span class="publication-status">✓ ${escapeHTML(t('published'))}</span>`;
+        else{
+            s+=`<span class="publication-status">✕ ${escapeHTML(t('notPublished'))}</span>`;
+            if(d.moderation==='pending')s+=`<br><span style="color:var(--silver);font-size:12px">${escapeHTML(t('pendingInfo'))}</span>`;
+            else if(d.moderation==='rejected')s+=`<br><span style="color:var(--silver);font-size:12px">${escapeHTML(t('rejectedInfo'))}</span>`;
+        }
+        txt.innerHTML=s;return;
+    }
+    if(d.telegram_status==='not_found'){
+        badge.innerText=t('telegramNotFound');badge.className='status-badge status-rejected';
+        txt.innerHTML=`${escapeHTML(d.link)}<br>${escapeHTML(t('usernameMissing'))}`;return;
+    }
+    if(d.telegram_status==='unavailable'){
+        badge.innerText=t('checkUnavailable');badge.className='status-badge status-pending';
+        const reason=d.telegram_reason?localizeBackendMessage(d.telegram_reason,'telegramUnavailable'):t('telegramUnavailable');
+        const retryAfter=Math.max(0,Number(d.telegram_retry_after)||0);
+        txt.innerText=retryAfter>0
+            ?`${reason}\n${t('telegramRetryAfter').replace('{seconds}',String(retryAfter))}`
+            :reason;
+        return;
+    }
+    if(d.telegram_status==='wrong_type'){
+        badge.innerText=t('checkError');badge.className='status-badge status-rejected';
+        txt.innerText=localizeBackendMessage(d.telegram_reason,'wrongResourceType');return;
+    }
+    badge.innerText=t('checkUnavailable');badge.className='status-badge status-unverified';txt.innerText=t('unknownError');
+}
+
+/* ---------- Профиль создателя ---------- */
+function stopFounderGiftAnimation(){
+    if(founderGiftAnimation){try{founderGiftAnimation.destroy()}catch(e){}founderGiftAnimation=null}
+    const container=document.getElementById('founder-gift');
+    if(container){container.innerHTML='';container.style.display='none'}
+    founderGiftDocumentId=null;
+}
+
+async function loadFounderGift(documentId){
+    const container=document.getElementById('founder-gift');
+    if(!container)return;
+    if(!documentId){stopFounderGiftAnimation();founderGiftFailedDocumentId=null;return}
+    const normalizedId=String(documentId);
+    if(normalizedId===String(founderGiftDocumentId))return;
+    if(founderGiftRequest)return founderGiftRequest;
+    if(founderGiftFailedDocumentId===normalizedId&&Date.now()-founderGiftFailedAt<300000)return;
+    if(founderGiftFailedDocumentId!==normalizedId){founderGiftFailedDocumentId=null;founderGiftFailedAt=0}
+
+    founderGiftRequest=(async()=>{
+        stopFounderGiftAnimation();
+        try{
+            const response=await fetch('/api/founder/gift?v='+encodeURIComponent(normalizedId),{cache:'default'});
+            if(!response.ok)throw new Error('Gift animation unavailable');
+            const animationData=await response.json();
+            if(!window.lottie)throw new Error('Lottie library unavailable');
+            container.innerHTML='';container.style.display='flex';
+            founderGiftAnimation=window.lottie.loadAnimation({
+                container:container,renderer:'svg',loop:true,autoplay:true,animationData:animationData
+            });
+            founderGiftDocumentId=normalizedId;
+            founderGiftFailedDocumentId=null;founderGiftFailedAt=0;
+        }catch(error){
+            console.warn('Founder gift loading error:',error);
+            stopFounderGiftAnimation();
+            founderGiftFailedDocumentId=normalizedId;
+            founderGiftFailedAt=Date.now();
+        }finally{
+            founderGiftRequest=null;
+        }
+    })();
+    return founderGiftRequest;
+}
+
+async function refreshFounderProfile(){
+    if(founderProfileRequest)return founderProfileRequest;
+    founderProfileRequest=(async()=>{
+        try{
+            const response=await fetch('/api/founder',{cache:'default'});
+            if(!response.ok)throw new Error('Founder profile unavailable');
+            const data=await response.json();
+            const profileLink=document.getElementById('founder-profile-link');
+            const contactLink=document.getElementById('founder-contact');
+            const avatar=document.getElementById('founder-avatar');
+            const name=document.getElementById('founder-name');
+            const username=document.getElementById('founder-username');
+            if(!profileLink||!contactLink||!avatar||!name||!username)return;
+
+            const actualUsername=String(data.username||'nifort').replace(/^@/,'');
+            const displayName=data.display_name||[data.first_name,data.last_name].filter(Boolean).join(' ')||actualUsername||String(data.id||'6182269112');
+            const profileUrl=data.profile_url||'https://t.me/'+actualUsername;
+            const usernameText=actualUsername?'@'+actualUsername:'';
+            // Подарок не влияет на URL аватара и не вызывает его повторную загрузку.
+            const signature=[data.id,displayName,actualUsername,profileUrl].join('|');
+            profileLink.href=profileUrl;contactLink.href=profileUrl;
+            name.textContent=displayName;username.textContent=usernameText;
+            if(signature!==founderProfileSignature){
+                avatar.style.display='block';
+                avatar.src='/api/founder/avatar?v='+encodeURIComponent(signature);
+                founderProfileSignature=signature;
+            }
+            if(data.has_collectible&&data.gift_document_id){
+                await loadFounderGift(data.gift_document_id);
+            }else{
+                stopFounderGiftAnimation();
+                founderGiftFailedDocumentId=null;founderGiftFailedAt=0;
+            }
+        }catch(error){console.warn('Founder profile refresh error:',error)}
+        finally{founderProfileRequest=null}
+    })();
+    return founderProfileRequest;
+}
+
+async function initUser(){
+    try{
+        const res=await fetch('/api/me',{headers:getHeaders()});
+        if(!res.ok)throw Error('Auth failed');
+        const d=await res.json();
+        isAdmin=d.is_admin;isTrusted=d.is_trusted;hasRequested=d.has_requested_access;
+        document.getElementById('add-form').style.display=(isAdmin||isTrusted)?'flex':'none';
+        document.getElementById('add-blocked').style.display=(isAdmin||isTrusted)?'none':'block';
+        const b=document.getElementById('request-access-btn');
+        b.innerText=hasRequested?t('requestSent'):t('requestAccess');
+        b.disabled=hasRequested;b.style.opacity=hasRequested?'.5':'1';
+        if(isAdmin&&!document.getElementById('admin-nav-item')){
+            const n=document.createElement('div');n.className='nav-item';n.id='admin-nav-item';
+            n.innerHTML=`<svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg><span>${escapeHTML(t('admin'))}</span>`;
+            n.onclick=()=>switchTab('admin',n);
+            document.getElementById('bottom-nav').appendChild(n);
+        }
+        updateAdminLabel();
+    }catch(e){console.error('Auth error',e)}
+}
+
+async function requestAccess(){
+    try{
+        const r=await fetch('/api/request_access',{method:'POST',headers:getHeaders()});
+        if(r.ok){showToast(t('requestSentToast'));initUser()}
+        else showToast(t('noRightsToast'),'error');
+    }catch(e){showToast(t('serverError'),'error')}
+}
+function switchTab(id,el){
+    document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+    document.getElementById('screen-'+id).classList.add('active');el.classList.add('active');
+    clearInterval(pollAdminInterval);clearInterval(pollProfileInterval);clearInterval(pollAddInterval);
+    if(id==='home'){loadStats();loadRecent()}
+    if(id==='catalog')loadCatalog();
+    if(id==='profile'){
+        // Не перерисовываем список проектов по таймеру: это закрывает подсказки,
+        // блок подтверждения владения и может прервать выбор/загрузку скриншота.
+        clearInterval(pollProfileInterval);
+        pollProfileInterval=null;
+        loadMyProjects(true);
+    }
+    if(id==='admin'){
+        loadAdminRequests();
+        pollAdminInterval=setInterval(()=>{
+            const a=document.querySelector('.admin-tab.active')?.id;
+            if(a==='tab-req')loadAdminRequests();else if(a==='tab-users')loadAdminUsers();else if(a==='tab-ownership')loadAdminOwnership();else if(a==='tab-official')loadAdminOfficial();else if(a==='tab-reports')loadAdminReports();else if(a==='tab-log')loadAdminModerationLog();else loadAdminCatalog();
+        },15000);
+    }
+    if(id==='add'){initUser();pollAddInterval=setInterval(initUser,15000)}
+}
+function switchAdminTab(tab,el){
+    document.querySelectorAll('.admin-tab').forEach(x=>x.classList.remove('active'));
+    el.classList.add('active');
+    ['req','users','ownership','official','reports','log','all'].forEach(x=>{document.getElementById('admin-content-'+x).style.display=x===tab?'flex':'none'});
+    if(tab==='req')loadAdminRequests();else if(tab==='users')loadAdminUsers();else if(tab==='ownership')loadAdminOwnership();else if(tab==='official')loadAdminOfficial();else if(tab==='reports')loadAdminReports();else if(tab==='log')loadAdminModerationLog();else loadAdminCatalog();
+}
+async function loadStats(){try{const r=await fetch('/api/stats');const d=await r.json();document.getElementById('stat-projects').innerText=d.projects}catch(e){}}
+async function loadRecent(){
+    const list=document.getElementById('recent-projects');
+    if(!list)return;
+    try{
+        const response=await fetch('/api/check/history',{headers:getHeaders(),cache:'no-store'});
+        let data=[];try{data=await response.json()}catch(error){}
+        if(!response.ok){
+            if(response.status===401){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noCheckHistory'))}</div>`;return}
+            throw new Error(data.error||data.message||t('checkHistoryLoadError'));
+        }
+        const items=Array.isArray(data)?data.slice(0,3):[];
+        list.innerHTML=items.length?items.map(item=>renderRecentCheck(item)).join(''):`<div class="empty-state">${escapeHTML(t('noCheckHistory'))}</div>`;
+    }catch(error){
+        console.error('Load recent checks error:',error);
+        list.innerHTML=`<div class="empty-state">${escapeHTML(t('checkHistoryLoadError'))}</div>`;
+    }
+}
+function renderRecentCheck(item){
+    const labels={catalog:t('catalogRecordFound'),exists:t('telegramExists'),not_found:t('telegramNotFound'),unavailable:t('checkUnavailable'),wrong_type:t('checkError')};
+    const status=labels[item.status]||t('checkUnavailable');
+    const name=item.title?`<b>${escapeHTML(item.title)}</b>`:'';
+    const checked=item.checked_at?`<div class="recent-check-meta">${escapeHTML(formatMoscowDateTime(item.checked_at))}</div>`:'';
+    return `<div class="card recent-check-card">${name}<div style="color:var(--silver);font-size:13px;overflow-wrap:anywhere">${escapeHTML(item.link||'')}</div><div class="recent-check-status">${escapeHTML(status)}</div>${checked}<button class="btn-admin" type="button" data-check-link="${escapeHTML(item.link||'')}" onclick="repeatRecentCheck(this.dataset.checkLink)">${escapeHTML(t('repeatCheck'))}</button></div>`;
+}
+function repeatRecentCheck(link){
+    const input=document.getElementById('check-link');
+    const button=document.querySelector('#screen-home .input-group .btn');
+    if(!input||!button||!link)return;
+    input.value=link;
+    checkLink(button);
+}
+async function checkLink(btn){
+    const link=document.getElementById('check-link').value.trim();
+    if(!link){showToast(t('invalidLink'),'error');return}
+    btn.disabled=true;btn.innerText=t('checkProgress');
+    try{
+        const r=await fetch('/api/check',{method:'POST',headers:getHeaders(),body:JSON.stringify({link})});
+        let d={};try{d=await r.json()}catch(e){}
+        if(!r.ok){showToast(localizeBackendMessage(d.error||d.message,'checkError'),'error');return}
+        lastCheckData=d;renderCheckResult(d);loadRecent();
+    }catch(e){showToast(t('networkError'),'error')}
+    finally{btn.disabled=false;btn.innerText=t('checkButton')}
+}
+async function loadCatalog(){
+    try{
+        const r=await fetch('/api/catalog');if(!r.ok)throw new Error('Catalog request failed');
+        const d=await r.json();catalogProjectsData=Array.isArray(d)?d:[];filterCatalog();
+    }catch(e){showToast(t('loadingCatalogError'),'error')}
+}
+async function submitProject(btn){
+    const title=document.getElementById('add-title').value.trim();
+    const link=document.getElementById('add-link').value.trim();
+    const category=document.getElementById('add-category').value;
+    const description=document.getElementById('add-desc').value.trim();
+    const website=document.getElementById('add-web').value.trim();
+    if(!title||!link){showToast(t('fillFields'),'error');return}
+    btn.disabled=true;btn.innerText=t('telegramChecking');
+    try{
+        const r=await fetch('/api/add',{method:'POST',headers:getHeaders(),body:JSON.stringify({title,link,category,description,website})});
+        let d={};try{d=await r.json()}catch(e){}
+        if(!r.ok){
+            const errorMessage=d.error||d.message||(r.status===401?'Telegram-авторизация устарела. Переоткройте приложение.':r.status===403?'У вас нет прав на добавление проектов.':r.status===503?'Проверка Telegram временно недоступна. Попробуйте позже.':t('requestFailed'));
+            showToast(localizeBackendMessage(errorMessage,r.status===401?'authExpired':r.status===403?'noAddPermission':'requestFailed'),'error');return;
+        }
+        let successMessage=t('projectSent');
+        if(d.telegram_status==='exists'&&d.telegram_verified)successMessage=t('projectSentVerified');
+        else if(d.telegram_status==='exists')successMessage=t('projectSentFound');
+        else if(d.telegram_status==='unavailable')successMessage=t('projectSentUnavailable');
+        showToast(successMessage);
+        ['add-title','add-link','add-desc','add-web'].forEach(id=>{document.getElementById(id).value=''});
+        loadStats();loadMyProjects();
+    }catch(e){console.error('Submit project error:',e);showToast(t('networkError'),'error')}
+    finally{btn.disabled=false;btn.innerText=t('submitModeration')}
+}
+function renderOfficialVerificationSection(project){
+    const id=Number(project.id);
+    if(project.is_official){
+        const sourceUrl=safeExternalUrl(project.source_url||project.official_request_source_url);
+        const source=sourceUrl?`<a href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:12px">${escapeHTML(t('officialSource'))} ↗</a>`:'';
+        return `<div class="official-verification-panel"><div class="official-verification-status is-confirmed">✓ ${escapeHTML(t('officialRequestConfirmed'))}</div>${source}</div>`;
+    }
+    if(project.moderation!=='approved'){
+        return `<div class="official-verification-panel"><div class="official-verification-status">${escapeHTML(t('officialRequestNeedPublish'))}</div></div>`;
+    }
+    const requestStatus=String(project.official_request_status||'');
+    if(requestStatus==='pending'){
+        return `<div class="official-verification-panel"><div class="official-verification-status is-pending">⏳ ${escapeHTML(t('officialRequestPending'))}</div></div>`;
+    }
+    const rejected=requestStatus==='rejected';
+    const reviewNote=rejected&&project.official_request_review_note?`<div class="official-verification-hint">${escapeHTML(project.official_request_review_note)}</div>`:'';
+    const autoDetail=rejected&&project.official_request_auto_detail?`<div class="official-verification-hint">${escapeHTML(project.official_request_auto_detail)}</div>`:'';
+    return `<div class="official-verification-panel">
+        ${rejected?`<div class="official-verification-status">${escapeHTML(t('officialRequestRejected'))}</div>${reviewNote}${autoDetail}`:''}
+        <button class="official-request-trigger" type="button" onclick="toggleOfficialRequestForm(${id},this)">${escapeHTML(t('officialRequest'))}</button>
+        <div class="official-verification-form" id="official-verification-form-${id}">
+            <input id="official-source-${id}" maxlength="300" value="${escapeHTML(project.website||'')}" placeholder="${escapeHTML(t('officialSourcePlaceholder'))}">
+            <textarea id="official-note-${id}" rows="2" maxlength="500" placeholder="${escapeHTML(t('officialNotePlaceholder'))}"></textarea>
+            <div class="official-verification-hint">${escapeHTML(t('officialRequestHint'))}</div>
+            <button class="official-request-submit" type="button" onclick="submitOfficialVerification(${id},this)">${escapeHTML(t('officialRequestSend'))}</button>
+        </div>
+    </div>`;
+}
+function toggleOfficialRequestForm(projectId,button){
+    const form=document.getElementById(`official-verification-form-${Number(projectId)}`);
+    if(!form)return;
+    form.style.display=form.style.display==='flex'?'none':'flex';
+    if(form.style.display==='flex')form.querySelector('input')?.focus();
+}
+async function submitOfficialVerification(projectId,button){
+    const id=Number(projectId);
+    const source=document.getElementById(`official-source-${id}`)?.value.trim()||'';
+    const note=document.getElementById(`official-note-${id}`)?.value.trim()||'';
+    if(!source){showToast(t('officialSourcePlaceholder'),'error');return}
+    const oldText=button?.textContent||'';
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/official/request',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,source_url:source,note}),signal:AbortSignal.timeout(15000)});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){showToast(localizeBackendMessage(data.error||data.message,'requestFailed'),'error');return}
+        showToast(data.message||t('officialRequestSent'));
+        await loadMyProjects(true);
+    }catch(error){
+        console.error('Submit OFFICIAL RESOURCE request error:',error);
+        showToast(t('networkError'),'error');
+    }finally{
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+function renderMyProjectCard(project){
+    const id=Number(project.id);
+    const status=project.moderation==='approved'
+        ?`<span style="color:#4ade80">${escapeHTML(t('projectPublished'))}</span>`
+        :project.moderation==='rejected'
+            ?`<span style="color:#f87171">${escapeHTML(t('projectRejected'))}</span>`
+            :`<span style="color:#fbbf24">${escapeHTML(t('waitingModeration'))}</span>`;
+    const websiteUrl=safeExternalUrl(project.website);
+    const website=websiteUrl?`<div style="margin-top:8px;font-size:12px"><a href="${escapeHTML(websiteUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver)">${escapeHTML(project.website)}</a></div>`:'';
+    const category=String(project.category||'other');
+    const categoryOptions=[['channel','channel'],['bot','bot'],['group','group'],['other','other']].map(([value,key])=>`<option value="${value}" ${category===value?'selected':''}>${escapeHTML(t(key))}</option>`).join('');
+    const sourceUrl=safeExternalUrl(project.source_url);
+    const source=sourceUrl?`<div style="margin-top:6px;font-size:12px"><a href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver)">${escapeHTML(t('sourceLabel'))} ↗</a></div>`:'';
+    const reviewStatus=String(project.ownership_review_status||'');
+    const ownershipPending=reviewStatus==='submitted';
+    const ownershipLabel=project.ownership_status==='verified'?t('ownershipVerified'):
+        ownershipPending?t('ownershipPending'):
+        reviewStatus==='awaiting_upload'?t('ownershipNeedUpload'):
+        reviewStatus==='rejected'?t('ownershipRejectedStatus'):t('ownershipUnverified');
+    return `<div class="card">
+        <div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br>
+        <span style="color:var(--silver);font-size:13px">${escapeHTML(project.link)}</span>
+        <div class="project-badges">${renderProjectBadges(project)}</div>
+        ${website}${source}
+        <div style="margin-top:10px;font-size:13px">${status}</div>
+        ${renderOfficialVerificationSection(project)}
+        <div class="ownership-panel" id="ownership-panel-${id}">
+            <div class="ownership-toolbar">
+                <div class="ownership-state ${project.ownership_status==='verified'?'is-verified':''}" id="ownership-state-${id}">${escapeHTML(ownershipLabel)}</div>
+                ${project.ownership_status==='verified'||ownershipPending?'':`<div class="ownership-actions"><button class="ownership-help-btn" type="button" aria-label="${escapeHTML(t('ownershipHelpLabel'))}" aria-expanded="false" aria-controls="ownership-help-${id}" onclick="toggleOwnershipHelp(${id},this)">?</button><button class="ownership-start-btn" type="button" onclick="startOwnershipVerification(${id},this)">${escapeHTML(t('ownershipStart'))}</button></div>`}
+            </div>
+            ${project.ownership_status==='verified'||ownershipPending?'':`<div class="ownership-help-popover" id="ownership-help-${id}" role="note">${escapeHTML(t('ownershipHelpText'))}</div><div class="ownership-code-area" id="ownership-code-area-${id}"></div><div class="ownership-manual-box"><button class="ownership-manual-toggle" type="button" onclick="toggleManualOwnershipForm(${id},this)">${escapeHTML(t('ownershipManualToggle'))}</button><div class="ownership-manual-form" id="ownership-manual-form-${id}"><textarea id="ownership-manual-note-${id}" maxlength="1000" placeholder="${escapeHTML(t('ownershipManualPlaceholder'))}"></textarea><button class="ownership-manual-send" type="button" onclick="submitManualOwnershipReview(${id},this)">${escapeHTML(t('ownershipManualSend'))}</button></div></div>`}
+        </div>
+        <div class="admin-actions"><button class="btn-admin" type="button" onclick="toggleProjectEditor(${id})">${escapeHTML(t('editProject'))}</button></div>
+        <div id="project-editor-${id}" class="project-editor" style="display:none">
+            <input id="edit-title-${id}" maxlength="80" value="${escapeHTML(project.title)}" placeholder="${escapeHTML(t('editProjectTitle'))}">
+            <input id="edit-link-${id}" maxlength="300" value="${escapeHTML(project.link)}" placeholder="${escapeHTML(t('editProjectLink'))}">
+            <select id="edit-category-${id}">${categoryOptions}</select>
+            <textarea id="edit-description-${id}" rows="3" maxlength="1000" placeholder="${escapeHTML(t('editProjectDescription'))}">${escapeHTML(project.description||'')}</textarea>
+            <input id="edit-website-${id}" maxlength="300" value="${escapeHTML(project.website||'')}" placeholder="${escapeHTML(t('editProjectWebsite'))}">
+            <div class="admin-actions">
+                <button class="btn-admin btn-save-project" type="button" onclick="saveProjectEdits(${id},this)">${escapeHTML(t('saveChanges'))}</button>
+            </div>
+        </div>
+    </div>`;
+}
+function toggleProjectEditor(projectId){
+    const editor=document.getElementById(`project-editor-${Number(projectId)}`);
+    if(!editor)return;
+    editor.style.display=editor.style.display==='none'?'flex':'none';
+}
+async function saveProjectEdits(projectId,button){
+    const id=Number(projectId);
+    const field=name=>document.getElementById(`edit-${name}-${id}`);
+    const title=field('title')?.value.trim()||'';
+    const link=field('link')?.value.trim()||'';
+    const category=field('category')?.value||'other';
+    const description=field('description')?.value.trim()||'';
+    const website=field('website')?.value.trim()||'';
+    if(!title||!link){showToast(t('fillFields'),'error');return}
+    const oldText=button.textContent;
+    button.disabled=true;button.textContent=t('telegramChecking');
+    try{
+        const response=await fetch('/api/edit',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,title,link,category,description,website}),signal:AbortSignal.timeout(20000)});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){
+            const fallback=response.status===401?'authExpired':response.status===403?'forbidden':'requestFailed';
+            showToast(localizeBackendMessage(data.error||data.message,fallback),'error');
+            return;
+        }
+        showToast(data.changed===false?t('projectNoChanges'):t('projectUpdated'));
+        await loadMyProjects(true);
+        const active=document.querySelector('.screen.active')?.id;
+        if(active==='screen-catalog')loadCatalog();
+        if(active==='screen-home')loadRecent();
+    }catch(error){
+        console.error('Edit project error:',error);
+        showToast(error?.name==='TimeoutError'?'Сервер не ответил за 20 секунд. Изменения не потеряны — попробуйте ещё раз.':t('networkError'),'error');
+    }finally{
+        button.disabled=false;button.textContent=oldText;
+    }
+}
+function openOwnershipTelegramLinkFromButton(button){
+    const url=button?.dataset?.telegramUrl||'https://t.me/BotFather';
+    if(!/^https:\/\/t\.me\/BotFather\/?$/i.test(url)){
+        showToast(currentLanguage==='ru'?'Некорректная ссылка BotFather':'Invalid BotFather link','error');
+        return;
+    }
+    try{
+        const webApp=window.Telegram?.WebApp;
+        if(webApp&&typeof webApp.openTelegramLink==='function'){
+            // Метод вызывается непосредственно из нажатия пользователя; Mini App не ждёт ответа от Telegram.
+            webApp.openTelegramLink('https://t.me/BotFather');
+            return;
+        }
+    }catch(error){console.warn('Telegram openTelegramLink failed:',error)}
+    try{
+        const opened=window.open('https://t.me/BotFather','_blank');
+        if(opened){opened.opener=null;return}
+        showToast(currentLanguage==='ru'?'Откройте t.me/BotFather в Telegram вручную':'Open t.me/BotFather in Telegram manually','error');
+    }catch(error){
+        console.error('Could not open BotFather:',error);
+        showToast(currentLanguage==='ru'?'Не удалось открыть BotFather':'Could not open BotFather','error');
+    }
+}
+
+function previewOwnershipScreenshot(projectId,input){
+    const file=input?.files?.[0];
+    const preview=document.getElementById(`ownership-preview-${Number(projectId)}`);
+    if(!preview)return;
+    if(!file){preview.removeAttribute('src');preview.style.display='none';return}
+    if(file.size>8*1024*1024){input.value='';preview.removeAttribute('src');preview.style.display='none';showToast(t('ownershipFileTooLarge'),'error');return}
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type)){
+        input.value='';preview.removeAttribute('src');preview.style.display='none';
+        showToast(currentLanguage==='ru'?'Выберите PNG, JPG или WEBP':'Choose PNG, JPG or WEBP','error');return;
+    }
+    if(preview.dataset.objectUrl)URL.revokeObjectURL(preview.dataset.objectUrl);
+    const objectUrl=URL.createObjectURL(file);
+    preview.dataset.objectUrl=objectUrl;preview.src=objectUrl;preview.style.display='block';
+    preview.onclick=()=>openOwnershipImageViewer(objectUrl);
+}
+
+async function uploadBotOwnershipScreenshot(projectId,challengeId,button){
+    const id=Number(projectId),challenge=Number(challengeId);
+    const input=document.getElementById(`ownership-file-${id}`);
+    const file=input?.files?.[0];
+    if(!file){showToast(t('ownershipFileRequired'),'error');return}
+    if(file.size>8*1024*1024){showToast(t('ownershipFileTooLarge'),'error');return}
+    if(!['image/png','image/jpeg','image/webp'].includes(file.type)){
+        showToast(currentLanguage==='ru'?'Поддерживаются PNG, JPG и WEBP':'PNG, JPG and WEBP are supported','error');return;
+    }
+    const oldText=button?.textContent||t('ownershipUploadButton');
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const form=new FormData();
+        form.append('project_id',String(id));
+        form.append('challenge_id',String(challenge));
+        form.append('screenshot',file,file.name||'botfather-screenshot');
+        const response=await fetch('/api/ownership/screenshot',{
+            method:'POST',
+            headers:{'Authorization':'tma '+(tg.initData||'')},
+            body:form,
+            signal:AbortSignal.timeout(30000)
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||data.message||t('requestFailed'));
+        showToast(t('ownershipUploadSuccess'),'success');
+        const area=document.getElementById(`ownership-code-area-${id}`);
+        if(area)area.innerHTML=`<div class="ownership-code-instructions" style="color:#4ade80;font-weight:800">${escapeHTML(t('ownershipPending'))}</div>`;
+        await loadMyProjects(true);
+    }catch(error){
+        console.error('Upload ownership screenshot error:',error);
+        showToast(error?.name==='TimeoutError'?t('networkError'):(error.message||t('networkError')),'error');
+    }finally{
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+function openOwnershipImageViewer(src){
+    if(!src)return;
+    const viewer=document.getElementById('ownership-image-viewer');
+    const img=document.getElementById('ownership-image-viewer-img');
+    img.src=src;viewer.classList.add('open');
+}
+function closeOwnershipImageViewer(){
+    const viewer=document.getElementById('ownership-image-viewer');
+    const img=document.getElementById('ownership-image-viewer-img');
+    viewer.classList.remove('open');img.removeAttribute('src');
+}
+function toggleOwnershipHelp(projectId,button){
+    const id=Number(projectId);
+    const popover=document.getElementById(`ownership-help-${id}`);
+    if(!popover||!button)return;
+    const willOpen=!popover.classList.contains('open');
+    document.querySelectorAll('.ownership-help-popover.open').forEach(item=>item.classList.remove('open'));
+    document.querySelectorAll('.ownership-help-btn[aria-expanded="true"]').forEach(item=>item.setAttribute('aria-expanded','false'));
+    if(willOpen){popover.classList.add('open');button.setAttribute('aria-expanded','true')}
+}
+
+function toggleManualOwnershipForm(projectId,button){
+    const form=document.getElementById(`ownership-manual-form-${Number(projectId)}`);
+    if(!form)return;
+    const opened=form.classList.toggle('open');
+    if(button)button.setAttribute('aria-expanded',opened?'true':'false');
+    if(opened){
+        const input=document.getElementById(`ownership-manual-note-${Number(projectId)}`);
+        if(input)input.focus();
+    }
+}
+async function submitManualOwnershipReview(projectId,button){
+    const id=Number(projectId);
+    const input=document.getElementById(`ownership-manual-note-${id}`);
+    const note=(input?.value||'').trim();
+    if(note.length<10){showToast(t('ownershipManualTooShort'),'error');if(input)input.focus();return}
+    const oldText=button?.textContent||t('ownershipManualSend');
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/ownership/manual_review',{
+            method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,note}),
+            signal:AbortSignal.timeout(15000)
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(localizeBackendMessage(data.error||data.message,'requestFailed'));
+        showToast(data.status==='verified'?t('ownershipVerified'):t('ownershipManualSubmitted'),'success');
+        await loadMyProjects(true);
+    }catch(error){
+        console.error('Submit manual ownership review error:',error);
+        showToast(error.message||t('requestFailed'),'error');
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+async function startOwnershipVerification(projectId,button){
+    const id=Number(projectId);
+    const codeArea=document.getElementById(`ownership-code-area-${id}`);
+    if(!codeArea)return;
+    const oldText=button?.textContent||t('ownershipStart');
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/ownership/start',{
+            method:'POST',headers:getHeaders(),
+            body:JSON.stringify({project_id:id}),
+            signal:AbortSignal.timeout(15000)
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){
+            if(response.status===404&&!data.error&&!data.message)throw new Error(t('ownershipLegacyServer'));
+            throw new Error(localizeBackendMessage(data.error||data.message,'ownershipError'));
+        }
+        if(data.status==='verified'){
+            showToast(t('ownershipVerified'),'success');
+            await loadMyProjects(true);
+            return;
+        }
+
+        const parts=[];
+        if(data.telegram_available){
+            parts.push(`<div class="ownership-code-instructions">${escapeHTML(t('ownershipTelegramHint'))}</div><button class="ownership-check-btn" type="button" onclick="checkOwnershipVerification(${id},'telegram',this)">${escapeHTML(t('ownershipTelegramMethod'))}</button>`);
+        }
+        if(data.bot_manual_available&&data.bot_manual_challenge_id){
+            const fatherUrl=data.botfather_url||'https://t.me/BotFather';
+            const challengeId=Number(data.bot_manual_challenge_id);
+            const botSteps=t('ownershipBotSteps').split('\n').map(step=>step.trim()).filter(Boolean).map(step=>step.replace(/^\d+[.)]\s*/,''));
+            const stepsHtml=botSteps.map(step=>`<li>${escapeHTML(step)}</li>`).join('');
+            parts.push(`<section class="ownership-bot-card"><div class="ownership-bot-heading">${escapeHTML(t('ownershipBotTitle'))}</div><ol class="ownership-bot-steps">${stepsHtml}</ol><div class="ownership-bot-warning">${escapeHTML(t('ownershipBotSecurityNote'))}<br>${escapeHTML(t('ownershipBotManualNote'))}</div><button class="ownership-bot-action" type="button" data-telegram-url="${escapeHTML(fatherUrl)}" onclick="openOwnershipTelegramLinkFromButton(this)">${escapeHTML(t('ownershipBotOpenFather'))}</button><div class="ownership-upload-box"><input class="ownership-file-input" id="ownership-file-${id}" type="file" accept="image/png,image/jpeg,image/webp" onchange="previewOwnershipScreenshot(${id},this)"><img class="ownership-local-preview" id="ownership-preview-${id}" alt="Screenshot preview"><button class="ownership-upload-btn" type="button" onclick="uploadBotOwnershipScreenshot(${id},${challengeId},this)">${escapeHTML(t('ownershipUploadButton'))}</button></div></section>`);
+        }
+        if(data.dns_available&&data.dns_record_name&&data.dns_record_value){
+            parts.push(`<div class="ownership-code-instructions" style="margin-top:12px">${escapeHTML(t('ownershipDnsHint'))}</div><div class="ownership-code-label">${escapeHTML(t('ownershipDnsRecord'))}</div><div class="ownership-code-row"><input class="ownership-code-input" readonly value="${escapeHTML(data.dns_record_name)}"><button class="ownership-copy-btn" type="button" onclick="copyOwnershipValue(this)">${escapeHTML(t('ownershipCopy'))}</button></div><div class="ownership-code-label" style="margin-top:9px">${escapeHTML(t('ownershipDnsValue'))}</div><div class="ownership-code-row"><input class="ownership-code-input" readonly value="${escapeHTML(data.dns_record_value)}"><button class="ownership-copy-btn" type="button" onclick="copyOwnershipValue(this)">${escapeHTML(t('ownershipCopy'))}</button></div><div class="ownership-code-note">${escapeHTML(t('ownershipDnsReady'))}</div><button class="ownership-check-btn" type="button" onclick="checkOwnershipVerification(${id},'dns',this)">${escapeHTML(t('ownershipDnsMethod'))}</button>`);
+        }
+        if(!parts.length){
+            parts.push(`<div class="ownership-code-instructions">${escapeHTML(t('ownershipNoMethods'))}</div>`);
+        }
+        codeArea.innerHTML=`<div class="ownership-code-instructions" style="font-weight:800;color:#ddd">${escapeHTML(t('ownershipMethodsTitle'))}</div>${parts.join('')}`;
+        codeArea.style.display='block';
+    }catch(error){
+        console.error('Start ownership verification error:',error);
+        showToast(error.message||t('ownershipError'),'error');
+    }finally{
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+async function copyOwnershipValue(button){
+    const row=button?.parentElement;
+    const input=row?.querySelector('input');
+    if(!input)return;
+    try{
+        if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(input.value);
+        else{
+            input.focus();input.select();input.setSelectionRange(0,99999);
+            if(!document.execCommand('copy'))throw new Error('copy failed');
+        }
+        showToast(currentLanguage==='ru'?'Скопировано':'Copied','success');
+    }catch(error){
+        console.error('Copy ownership value error:',error);
+        showToast(currentLanguage==='ru'?'Не удалось скопировать':'Could not copy','error');
+    }
+}
+async function checkOwnershipVerification(projectId,method,button){
+    const id=Number(projectId);
+    const oldText=button?.textContent||t('ownershipStart');
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/ownership/check',{
+            method:'POST',headers:getHeaders(),
+            body:JSON.stringify({project_id:id,method}),
+            signal:AbortSignal.timeout(20000)
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){
+            const message=data.error||data.message||t('ownershipError');
+            throw new Error(localizeBackendMessage(message,method==='dns'?'ownershipDnsNotFound':'ownershipError'));
+        }
+        showToast(t('ownershipSuccess'),'success');
+        await loadMyProjects(true);
+    }catch(error){
+        console.error('Check ownership verification error:',error);
+        showToast(error.message||t('ownershipError'),'error');
+    }finally{
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+async function loadMyProjects(force=false){
+    try{
+        const list=document.getElementById('my-projects-list');
+        if(!force&&Array.from(list.querySelectorAll('.project-editor')).some(editor=>editor.style.display!=='none'))return;
+        const focused=document.activeElement;
+        if(!force&&focused&&list.contains(focused)&&focused.closest('.official-verification-form'))return;
+        const response=await fetch('/api/my_projects',{headers:getHeaders()});
+        if(!response.ok)throw new Error('My projects request failed');
+        const data=await response.json();
+        if(!Array.isArray(data)||!data.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noOwnProjects'))}</div>`;return}
+        list.innerHTML=data.map(renderMyProjectCard).join('');
+    }catch(error){console.error('Load my projects error:',error);showToast(t('projectsLoadError'),'error')}
+}
+let activeReportProjectId=0;
+function openReportModal(projectId){
+    const id=Number(projectId);
+    const project=catalogProjectsData.find(item=>Number(item.id)===id);
+    if(!project){showToast(t('requestFailed'),'error');return}
+    activeReportProjectId=id;
+    document.getElementById('report-project-title').textContent=`${project.title} · ${project.link}`;
+    document.getElementById('report-reason').value='scam';
+    document.getElementById('report-description').value='';
+    document.getElementById('report-modal').style.display='flex';
+}
+function closeReportModal(){
+    const modal=document.getElementById('report-modal');
+    if(modal)modal.style.display='none';
+    activeReportProjectId=0;
+}
+async function submitProjectReport(button){
+    if(!activeReportProjectId)return;
+    const reason=document.getElementById('report-reason').value;
+    const description=document.getElementById('report-description').value.trim();
+    const oldText=button.textContent;
+    button.disabled=true;button.textContent=t('loading');
+    try{
+        const response=await fetch('/api/report',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:activeReportProjectId,reason,description})});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){
+            const fallback=response.status===401?'authExpired':response.status===403?'forbidden':response.status===409?'reportDuplicate':response.status===429?'reportLimit':'requestFailed';
+            showToast(localizeBackendMessage(data.error||data.message,fallback),'error');
+            return;
+        }
+        closeReportModal();
+        showToast(t('reportSent'));
+    }catch(error){
+        console.error('Submit report error:',error);
+        showToast(t('networkError'),'error');
+    }finally{
+        button.disabled=false;button.textContent=oldText;
+    }
+}
+function getReportReasonLabel(reason){
+    const labels={scam:'reportScam',impersonation:'reportImpersonation',invalid_link:'reportInvalidLink',spam:'reportSpam',other:'reportOther'};
+    return t(labels[reason]||'reportOther');
+}
+async function loadAdminReports(){
+    try{
+        const response=await fetch('/api/admin/reports',{headers:getHeaders()});
+        if(!response.ok)throw new Error('Admin reports request failed');
+        const reports=await response.json();
+        const list=document.getElementById('admin-content-reports');
+        if(!Array.isArray(reports)||!reports.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noReports'))}</div>`;return}
+        list.innerHTML=reports.map(report=>{
+            const author=report.author_username?`@${escapeHTML(report.author_username)}`:'—';
+            const created=report.created_at?escapeHTML(t('submittedAt')+': '+formatMoscowDateTime(report.created_at)):'';
+            const telegramUsername=String(report.project_link||'').replace(/^@/,'');
+            const projectUrl=telegramUsername?`https://t.me/${encodeURIComponent(telegramUsername)}`:'';
+            const projectLink=projectUrl?`<a href="${escapeHTML(projectUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:12px;text-decoration:none">${escapeHTML(report.project_link)} ↗</a>`:`<span style="color:var(--silver);font-size:12px">${escapeHTML(report.project_link||'')}</span>`;
+            return `<div class="card admin-card"><div class="project-title-row"><b>${escapeHTML(report.project_title)}</b>${renderLinkcheckBadgeButton(report)}</div>${projectLink}<div style="font-size:12px;color:#999">${escapeHTML(t('reportReason'))}: <b style="color:#fff">${escapeHTML(getReportReasonLabel(report.reason))}</b></div><p class="desc-text">${escapeHTML(report.description||t('noDescription'))}</p><div style="font-size:11px;color:#777">${escapeHTML(t('reportAuthor'))}: ${author} · ID ${Number(report.author_tg_id)||'—'} ${created?'· '+created:''}</div><div class="admin-actions"><button class="btn-admin btn-approve" type="button" onclick="adminReportAction(${Number(report.id)},'reviewed')">${escapeHTML(t('markReviewed'))}</button><button class="btn-admin btn-reject" type="button" onclick="adminReportAction(${Number(report.id)},'dismissed')">${escapeHTML(t('dismissReport'))}</button></div></div>`;
+        }).join('');
+    }catch(error){console.error('Load admin reports error:',error);showToast(t('requestsLoadError'),'error')}
+}
+async function adminReportAction(reportId,action){
+    try{
+        const response=await fetch('/api/admin/report_action',{method:'POST',headers:getHeaders(),body:JSON.stringify({report_id:Number(reportId),action})});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){showToast(localizeBackendMessage(data.error||data.message,'requestFailed'),'error');return}
+        showToast(action==='reviewed'?t('reportReviewed'):t('reportDismissed'));
+        await loadAdminReports();
+    }catch(error){console.error('Admin report action error:',error);showToast(t('networkError'),'error')}
+}
+
+
+function getModerationActionLabel(action){
+    const labels={
+        approve:['Одобрение проекта','Project approved'],
+        reject:['Отклонение проекта','Project rejected'],
+        delete:['Удаление проекта','Project deleted'],
+        official_resource_approved:['Подтверждение OFFICIAL RESOURCE','OFFICIAL RESOURCE approved'],
+        official_resource_rejected:['Отклонение OFFICIAL RESOURCE','OFFICIAL RESOURCE rejected'],
+        report_reviewed:['Жалоба рассмотрена','Report reviewed'],
+        report_dismissed:['Жалоба отклонена','Report dismissed'],
+        ownership_manual_admin_approved:['Владение подтверждено вручную','Ownership manually verified'],
+        ownership_manual_admin_rejected:['Ручная проверка владения отклонена','Manual ownership review rejected'],
+        ownership_bot_manual_approved:['Владение ботом подтверждено','Bot ownership verified'],
+        ownership_bot_manual_rejected:['Скриншот BotFather отклонён','BotFather screenshot rejected'],
+        linkcheck_badge_manual_granted:['Фирменный значок выдан вручную','Branded badge manually granted'],
+        linkcheck_badge_manual_revoked:['Ручная выдача значка снята','Manual badge grant revoked'],
+        user_trust_granted:['Права на добавление выданы','Project submission permission granted'],
+        user_trust_revoked:['Права на добавление отозваны','Project submission permission revoked']
+    };
+    const pair=labels[String(action||'')];
+    return pair?pair[currentLanguage==='ru'?0:1]:String(action||'—');
+}
+async function loadAdminModerationLog(){
+    const list=document.getElementById('admin-content-log');
+    if(!list)return;
+    try{
+        const response=await fetch('/api/admin/moderation_log?limit=120',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+        let data=[];try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data?.error||t('moderationLogLoadError'));
+        if(!Array.isArray(data)||!data.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('moderationLogEmpty'))}</div>`;return}
+        list.innerHTML=data.map(item=>{
+            const admin=item.admin_username?'@'+item.admin_username:'ID '+(Number(item.admin_tg_id)||'—');
+            const title=item.project_title||('ID '+(Number(item.project_id)||'—'));
+            const link=String(item.project_link||'').trim();
+            const username=link.replace(/^@/,'');
+            const projectUrl=/^[A-Za-z0-9_]{5,32}$/.test(username)?'https://t.me/'+encodeURIComponent(username):'';
+            const projectHtml=projectUrl?`<a href="${escapeHTML(projectUrl)}" target="_blank" rel="noopener noreferrer" class="moderation-log-project-link">${escapeHTML(title)} · ${escapeHTML(link)} ↗</a>`:`<div class="moderation-log-project">${escapeHTML(title)}</div>`;
+            const date=item.created_at?formatMoscowDateTime(item.created_at):'—';
+            const comment=item.comment?`<div class="moderation-log-comment">${escapeHTML(item.comment)}</div>`:'';
+            return `<article class="card moderation-log-card"><div class="moderation-log-top"><span class="moderation-log-action">${escapeHTML(getModerationActionLabel(item.action))}</span><span class="moderation-log-date">${escapeHTML(date)}</span></div>${projectHtml}<div class="moderation-log-admin">${escapeHTML(t('moderationAdmin'))}: ${escapeHTML(admin)} · ID ${Number(item.admin_tg_id)||'—'}</div>${comment}</article>`;
+        }).join('');
+    }catch(error){
+        console.error('Load moderation log error:',error);
+        list.innerHTML=`<div class="empty-state">${escapeHTML(error?.message||t('moderationLogLoadError'))}<br><button class="btn-admin" type="button" style="margin-top:12px" onclick="loadAdminModerationLog()">${escapeHTML(t('actionDone'))}</button></div>`;
+    }
+}
+
+async function loadAdminOfficial(){
+    const list=document.getElementById('admin-content-official');
+    if(!list)return;
+    const focused=document.activeElement;
+    if(focused&&list.contains(focused)&&['INPUT','TEXTAREA'].includes(focused.tagName))return;
+    try{
+        const response=await fetch('/api/admin/official',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+        let data=[];try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data?.error||'Не удалось загрузить заявки OFFICIAL RESOURCE');
+        if(!Array.isArray(data)||!data.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('officialNoQueue'))}</div>`;return}
+        const statusLabels={
+            linked:currentLanguage==='ru'?'HTML доступен, ссылка найдена':'HTML available, Telegram link found',
+            no_link:currentLanguage==='ru'?'HTML доступен, ссылка не найдена':'HTML available, no Telegram link found',
+            partial:currentLanguage==='ru'?'Проверена только часть страницы':'Only part of the page was checked',
+            unavailable:currentLanguage==='ru'?'Источник недоступен для автопроверки':'Source unavailable for automatic check',
+            blocked:currentLanguage==='ru'?'Переход заблокирован правилами безопасности':'Redirect blocked by security rules',
+            unsupported:currentLanguage==='ru'?'Источник не вернул HTML':'Source did not return HTML'
+        };
+        list.innerHTML=`<div class="official-verification-hint">${escapeHTML(t('officialQueueDisclaimer'))}</div>`+data.map(item=>{
+            const id=Number(item.id);
+            const sourceUrl=safeExternalUrl(item.source_url);
+            const source=sourceUrl?`<a href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;overflow-wrap:anywhere">${escapeHTML(item.source_url)} ↗</a>`:`<span>${escapeHTML(item.source_url||'')}</span>`;
+            const projectUrl=`https://t.me/${encodeURIComponent(String(item.project_link||'').replace(/^@/,''))}`;
+            const created=item.created_at?`<div class="official-verification-hint">${escapeHTML(t('submittedAt'))}: ${escapeHTML(formatMoscowDateTime(item.created_at))}</div>`:'';
+            const owner=item.requester_username?`@${escapeHTML(item.requester_username)}`:'—';
+            const autoLabel=statusLabels[item.automatic_status]||item.automatic_status||'—';
+            const http=item.http_status?` · HTTP ${Number(item.http_status)}`:'';
+            const note=item.note?`<div class="official-verification-hint">${escapeHTML(item.note)}</div>`:'';
+            return `<div class="card admin-card">
+                <div class="project-title-row"><b>${escapeHTML(item.project_title)}</b>${renderLinkcheckBadgeButton(item)}</div>
+                <a href="${escapeHTML(projectUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px">${escapeHTML(item.project_link)} ↗</a>
+                <div class="official-verification-hint">ID проекта: ${Number(item.project_id)} · ${escapeHTML(t('officialRequester'))}: ${owner} · ${Number(item.requester_tg_id)||'—'}</div>
+                <div><b style="font-size:12px">${escapeHTML(t('officialSource'))}</b><br>${source}</div>
+                ${created}${note}
+                <div class="official-verification-panel"><b style="font-size:12px">${escapeHTML(t('officialAutoCheck'))}${http}</b><div class="official-verification-hint">${escapeHTML(autoLabel)} — ${escapeHTML(item.automatic_detail||'')}</div><div class="official-verification-hint">${escapeHTML(t('sourceLabel'))}: ${escapeHTML(item.source_url)}</div></div>
+                <textarea id="official-review-note-${id}" rows="2" maxlength="1000" placeholder="${escapeHTML(t('officialReviewNote'))}" style="width:100%;box-sizing:border-box"></textarea>
+                <div class="admin-actions"><button class="btn-admin btn-approve" type="button" onclick="adminOfficialAction(${id},'approve',this)">${escapeHTML(t('officialApprove'))}</button><button class="btn-admin btn-reject" type="button" onclick="adminOfficialAction(${id},'reject',this)">${escapeHTML(t('officialReject'))}</button></div>
+            </div>`;
+        }).join('');
+    }catch(error){
+        console.error('Load OFFICIAL RESOURCE queue error:',error);
+        list.innerHTML=`<div class="empty-state">${escapeHTML(error?.message||t('requestsLoadError'))}<br><button class="btn-admin" type="button" style="margin-top:12px" onclick="loadAdminOfficial()">${escapeHTML(t('actionDone'))}</button></div>`;
+    }
+}
+async function adminOfficialAction(requestId,action,button){
+    const id=Number(requestId);
+    const reviewNote=document.getElementById(`official-review-note-${id}`)?.value.trim()||'';
+    if(action==='approve'&&!reviewNote){
+        const card=button?.closest('.card');
+        const statusText=card?.querySelector('.official-verification-panel .official-verification-hint')?.textContent||'';
+        if(!statusText.includes('link found')&&!statusText.includes('ссылка найдена')){
+            showToast(currentLanguage==='ru'?'Для ручного подтверждения укажите основание в комментарии':'Add a reason before manually approving without a detected link','error');
+            document.getElementById(`official-review-note-${id}`)?.focus();
+            return;
+        }
+    }
+    if(action==='reject'&&!reviewNote&&!confirm(currentLanguage==='ru'?'Отклонить запрос без комментария?':'Reject the request without a note?'))return;
+    const oldText=button?.textContent||'';
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const response=await fetch('/api/admin/official_action',{method:'POST',headers:getHeaders(),body:JSON.stringify({request_id:id,action,review_note:reviewNote}),signal:AbortSignal.timeout(15000)});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok){showToast(data.error||t('requestFailed'),'error');return}
+        showToast(action==='approve'?t('officialApprovalDone'):t('officialRejectionDone'));
+        await loadAdminOfficial();
+        await loadAdminCatalog();
+    }catch(error){
+        console.error('Admin OFFICIAL RESOURCE action error:',error);
+        showToast(t('networkError'),'error');
+    }finally{
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+let adminRequestsLoadPromise=null;
+async function loadAdminRequests(){
+    if(adminRequestsLoadPromise)return adminRequestsLoadPromise;
+    adminRequestsLoadPromise=(async()=>{
+        const list=document.getElementById('admin-content-req');
+        if(!list)return;
+        try{
+            const response=await fetch('/api/admin/requests',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+            let data=null;
+            try{data=await response.json()}catch(parseError){throw new Error('Сервер вернул некорректный ответ')}
+            if(!response.ok){
+                const message=data?.error||data?.message||`HTTP ${response.status}`;
+                if(response.status===401||response.status===403)throw new Error('Нет доступа к заявкам. Переоткройте Mini App через Telegram.');
+                throw new Error(message);
+            }
+            if(!Array.isArray(data))throw new Error('Сервер вернул неверный формат списка заявок');
+            if(!data.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('noRequests'))}</div>`;return}
+            list.innerHTML=data.map(p=>{
+                const badges=renderProjectBadges(p);
+                const created=p.created_at?`<div class="linkcheck-badge-note">${escapeHTML(t('submittedAt')+': '+formatMoscowDateTime(p.created_at))}</div>`:'';
+                const websiteUrl=safeExternalUrl(p.website);
+                const website=websiteUrl?`<p class="desc-text">${escapeHTML(t('submittedWebsite'))}: <a href="${escapeHTML(websiteUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver)">${escapeHTML(p.website)}</a></p>`:'';
+                return `<div class="card admin-card"><div class="project-title-row"><b>${escapeHTML(p.title)}</b>${renderLinkcheckBadgeButton(p)}</div><span style="color:var(--silver);font-size:13px">${escapeHTML(p.link)}</span><div class="project-badges">${badges}</div>${created}<p style="font-size:12px;color:#fbbf24">${escapeHTML(t('newRequest'))}</p><p class="desc-text">${escapeHTML(p.description||t('noDescription'))}</p>${website}<div class="admin-actions"><button class="btn-admin btn-approve" type="button" onclick="adminAction(${Number(p.id)},'approve')">${escapeHTML(t('approve'))}</button><button class="btn-admin btn-reject" type="button" onclick="adminAction(${Number(p.id)},'reject')">${escapeHTML(t('reject'))}</button></div></div>`;
+            }).join('');
+        }catch(error){
+            console.error('Load admin requests error:',error);
+            const detail=error?.name==='TimeoutError'?'Сервер слишком долго отвечает при загрузке заявок.':(error?.message||'Не удалось загрузить заявки.');
+            list.innerHTML=`<div class="empty-state">${escapeHTML(detail)}<br><button class="btn-admin" type="button" style="margin-top:12px" onclick="loadAdminRequests()">Повторить загрузку</button></div>`;
+            showToast(detail,'error');
+        }
+    })();
+    try{return await adminRequestsLoadPromise}finally{adminRequestsLoadPromise=null}
+}
+
+const ownershipScreenshotUrls={};
+async function loadAdminOwnership(){
+    const list=document.getElementById('admin-content-ownership');
+    if(!list)return;
+    const focusedElement=document.activeElement;
+    if(list.contains(focusedElement)&&focusedElement&&['INPUT','TEXTAREA'].includes(focusedElement.tagName))return;
+    if(document.getElementById('ownership-image-viewer')?.classList.contains('open'))return;
+    try{
+        const response=await fetch('/api/admin/ownership',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+        let data=[];try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data?.error||'Не удалось загрузить заявки на подтверждение владения');
+        if(!Array.isArray(data)||!data.length){list.innerHTML=`<div class="empty-state">${escapeHTML(t('ownershipNoQueue'))}</div>`;return}
+        list.innerHTML=data.map(item=>{
+            const id=Number(item.challenge_id);
+            const owner=item.owner_username?'@'+escapeHTML(item.owner_username):'—';
+            const date=item.created_at?escapeHTML(t('submittedAt')+': '+formatMoscowDateTime(item.created_at)):'';
+            const isManual=item.method==='manual_admin';
+            const projectUrl=safeExternalUrl(item.project_link);
+            const projectLink=projectUrl?`<a href="${escapeHTML(projectUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;overflow-wrap:anywhere">${escapeHTML(item.project_link)}</a>`:`<span style="color:var(--silver);font-size:13px;overflow-wrap:anywhere">${escapeHTML(item.project_link)}</span>`;
+            const ownerUrl=item.owner_username?`https://t.me/${encodeURIComponent(String(item.owner_username).replace(/^@/,''))}`:`tg://user?id=${Number(item.owner_tg_id)}`;
+            const proof=isManual
+                ?`<div style="margin-top:11px;padding:10px;border:1px solid #3a3a3a;border-radius:9px;background:#ffffff05"><div style="font-size:10px;color:#888;margin-bottom:5px">${escapeHTML(t('ownershipManualReason'))}</div><div style="font-size:12px;color:#ddd;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere">${escapeHTML(item.manual_note||'—')}</div><div style="font-size:10px;color:#999;margin-top:8px">${escapeHTML(t('ownershipManualNoScreenshot'))}</div></div>`
+                :`<div style="font-size:11px;color:#aaa;margin-top:8px">${escapeHTML(t('ownershipScreenshot'))} · ${escapeHTML(t('ownershipClickToEnlarge'))}</div><div><div class="ownership-admin-image-loading" id="ownership-image-loading-${id}">${escapeHTML(t('loading'))}</div><img class="ownership-admin-image" id="ownership-admin-image-${id}" alt="BotFather screenshot" style="display:none" onclick="openOwnershipImageViewer(this.src)"></div>`;
+            return `<div class="card admin-card" id="ownership-admin-card-${id}"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>${escapeHTML(item.project_title)}</b>${renderLinkcheckBadgeButton(item)}<span style="font-size:10px;padding:4px 7px;border:1px solid #555;border-radius:6px;color:#ccc">${escapeHTML(isManual?t('ownershipManualRequestType'):t('ownershipScreenshot'))}</span></div>${projectLink}<div style="font-size:11px;color:#888;margin-top:7px">Проект ID ${Number(item.project_id)} · Владелец ${owner} · Telegram ID ${Number(item.owner_tg_id)}${date?' · '+date:''}</div><div style="margin-top:8px"><a href="${escapeHTML(ownerUrl)}" target="_blank" rel="noopener noreferrer" style="color:#aaa;font-size:11px">${escapeHTML(t('ownershipManualOpenOwner'))} ↗</a></div>${proof}<div style="margin-top:10px"><textarea id="ownership-admin-note-${id}" maxlength="500" rows="2" placeholder="${escapeHTML(t('ownershipManualAdminNote'))}" style="width:100%;padding:9px;border:1px solid #333;border-radius:8px;background:#090909;color:#eee;font:inherit;font-size:11px;resize:vertical"></textarea></div><div class="admin-actions"><button class="btn-admin btn-approve" type="button" onclick="adminOwnershipAction(${id},'approve',this)">${escapeHTML(t('ownershipApprove'))}</button><button class="btn-admin btn-reject" type="button" onclick="adminOwnershipAction(${id},'reject',this)">${escapeHTML(t('ownershipReject'))}</button></div></div>`;
+        }).join('');
+        data.filter(item=>item.method!=='manual_admin').forEach(item=>loadAdminOwnershipImage(Number(item.challenge_id)));
+    }catch(error){
+        console.error('Load admin ownership queue error:',error);
+        list.innerHTML=`<div class="empty-state">${escapeHTML(error.message||t('requestsLoadError'))}<br><button class="btn-admin" type="button" style="margin-top:12px" onclick="loadAdminOwnership()">${currentLanguage==='ru'?'Повторить':'Retry'}</button></div>`;
+    }
+}
+async function loadAdminOwnershipImage(challengeId){
+    try{
+        const response=await fetch(`/api/admin/ownership/${challengeId}/screenshot`,{
+            headers:{'Authorization':'tma '+(tg.initData||'')},cache:'no-store',signal:AbortSignal.timeout(20000)
+        });
+        if(!response.ok)throw new Error('Image request failed: '+response.status);
+        const blob=await response.blob();
+        const url=URL.createObjectURL(blob);
+        if(ownershipScreenshotUrls[challengeId])URL.revokeObjectURL(ownershipScreenshotUrls[challengeId]);
+        ownershipScreenshotUrls[challengeId]=url;
+        const img=document.getElementById(`ownership-admin-image-${challengeId}`);
+        const loading=document.getElementById(`ownership-image-loading-${challengeId}`);
+        if(img){img.src=url;img.style.display='block'}
+        if(loading)loading.style.display='none';
+    }catch(error){
+        console.error('Load admin ownership image error:',error);
+        const loading=document.getElementById(`ownership-image-loading-${challengeId}`);
+        if(loading)loading.textContent=t('ownershipNoImage');
+    }
+}
+async function adminOwnershipAction(challengeId,action,button){
+    const oldText=button?.textContent||'';
+    if(button){button.disabled=true;button.textContent=t('loading')}
+    try{
+        const noteInput=document.getElementById(`ownership-admin-note-${Number(challengeId)}`);
+        const reviewNote=(noteInput?.value||'').trim();
+        const response=await fetch('/api/admin/ownership_action',{
+            method:'POST',headers:getHeaders(),body:JSON.stringify({challenge_id:Number(challengeId),action,review_note:reviewNote}),
+            signal:AbortSignal.timeout(15000)
+        });
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||data.message||t('requestFailed'));
+        showToast(action==='approve'?t('ownershipActionApproved'):t('ownershipActionRejected'),'success');
+        await loadAdminOwnership();
+    }catch(error){
+        console.error('Admin ownership action error:',error);
+        showToast(error.message||t('requestFailed'),'error');
+        if(button){button.disabled=false;button.textContent=oldText}
+    }
+}
+
+async function loadAdminCatalog(){
+    const focused=document.activeElement;
+    if(focused&&focused.id&&focused.id.startsWith('linkcheck-badge-reason-'))return;
+    try{
+        const r=await fetch('/api/admin/catalog',{headers:getHeaders()});if(!r.ok)throw new Error('Admin catalog request failed');
+        const d=await r.json();adminProjectsData=Array.isArray(d)?d:[];filterAdminProjects();
+    }catch(e){showToast(t('projectsLoadError'),'error')}
+}
+async function adminAction(id,action){
+    if(action==='delete'&&!confirm(t('confirmDelete')))return;
+    try{
+        const r=await fetch('/api/admin/action',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,action})});
+        if(r.ok){
+            const messages={approve:'projectApprovedToast',reject:'projectRejectedToast',delete:'projectDeletedToast'};
+            showToast(t(messages[action]||'actionDone'));
+            const a=document.querySelector('.admin-tab.active')?.id;
+            if(a==='tab-req')loadAdminRequests();else if(a==='tab-all')loadAdminCatalog();
+        }else{
+            let d={};try{d=await r.json()}catch(e){}
+            showToast(localizeBackendMessage(d.error||d.message,'requestFailed'),'error');
+        }
+    }catch(e){showToast(t('contactError'),'error')}
+}
+async function loadAdminUsers(){
+    try{
+        const r=await fetch('/api/admin/users',{headers:getHeaders()});if(!r.ok)throw new Error('Admin users request failed');
+        const d=await r.json();adminUsersData=Array.isArray(d)?d:[];filterAdminUsers();
+    }catch(e){showToast(t('usersLoadError'),'error')}
+}
+async function toggleTrust(id,action){
+    try{
+        const r=await fetch('/api/admin/toggle_trust',{method:'POST',headers:getHeaders(),body:JSON.stringify({tg_id:id,action})});
+        if(r.ok){showToast(action==='trust'?t('rightsGranted'):t('rightsTaken'));loadAdminUsers()}
+        else{let d={};try{d=await r.json()}catch(e){}showToast(localizeBackendMessage(d.error||d.message,'serverError'),'error')}
+    }catch(e){showToast(t('serverError'),'error')}
+}
+
+setLanguage(currentLanguage);
+initUser().then(()=>{loadStats();loadRecent()});
+refreshFounderProfile();
+founderRefreshInterval=setInterval(refreshFounderProfile,60000);
+</script>
+<div id="privacy-modal" class="privacy-modal" role="dialog" aria-modal="true" aria-label="Privacy Policy">
+    <div class="privacy-modal-header"><div class="privacy-modal-title" data-i18n="privacyPolicy">Политика конфиденциальности</div><button class="privacy-modal-close" type="button" onclick="closePrivacyPolicy()" aria-label="Close">×</button></div>
+    <iframe id="privacy-frame" title="LINKCHECK Privacy Policy" loading="lazy"></iframe>
+</div>
+</body>
+</html>
