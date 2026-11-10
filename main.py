@@ -1220,10 +1220,12 @@ def init_db():
                 user_chat_id INTEGER NOT NULL,
                 is_enabled INTEGER NOT NULL DEFAULT 1,
                 rights_json TEXT,
+                first_message_saved_at TEXT,
                 connected_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
         """)
+        ensure_column(conn, "plus_business_connections", "first_message_saved_at", "TEXT")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS plus_business_messages (
                 connection_id TEXT NOT NULL,
@@ -5270,6 +5272,17 @@ async def handle_business_connection(connection):
         note = ("Подключение Telegram Business активно. LINKCHECK PLUS готов отслеживать доставленные боту события."
                 if sub and sub["active"] else
                 "Telegram Business подключён. Для начала мониторинга активируйте LINKCHECK PLUS в Mini App.")
+        all_rights = (
+            "can_reply", "can_read_messages", "can_delete_sent_messages", "can_delete_all_messages",
+            "can_edit_name", "can_edit_bio", "can_edit_profile_photo", "can_edit_username",
+            "can_change_gift_settings", "can_view_gifts_and_stars", "can_convert_gifts_to_stars",
+            "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories"
+        )
+        missing_rights = [right for right in all_rights if not rights.get(right)]
+        if missing_rights:
+            note += "\n\n<b>Не все Business-права выданы.</b> Для полного набора функций LINKCHECK открой настройки подключённого бота и включи все доступные разрешения. Отсутствуют: " + ", ".join(missing_rights)
+        else:
+            note += "\n\nВсе доступные Business-права выданы."
         try:
             await bot.send_message(connection.user_chat_id, note)
         except Exception:
@@ -5327,6 +5340,26 @@ async def handle_business_message(message: Message):
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
         media_type or "none", bool(media_path)
     )
+    # One-time end-to-end confirmation proves that Telegram delivered the original
+    # business_message update and that LINKCHECK committed it to persistent storage.
+    first_saved = False
+    with db_connect() as conn:
+        cur = conn.execute(
+            "UPDATE plus_business_connections SET first_message_saved_at=?, updated_at=? "
+            "WHERE connection_id=? AND first_message_saved_at IS NULL",
+            (now_iso(), now_iso(), connection_id)
+        )
+        first_saved = cur.rowcount > 0
+    if first_saved:
+        try:
+            await bot.send_message(
+                connection["user_chat_id"],
+                "<b>LINKCHECK PLUS: мониторинг проверен</b>\n\n"
+                "Telegram доставил первое новое сообщение, и LINKCHECK сохранил его копию. "
+                "Теперь изменения и удаления этого сообщения можно обработать по сохранённой версии."
+            )
+        except Exception:
+            logging.exception("LINKCHECK PLUS: could not send first-save confirmation owner=%s", connection["owner_tg_id"])
 
 
 async def send_business_snapshot(owner_chat_id: int, record, heading: str):

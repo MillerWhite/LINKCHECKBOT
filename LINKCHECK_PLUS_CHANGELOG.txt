@@ -86,3 +86,11 @@ LIMITATIONS
 - Telegram's deletion update contains message IDs, not deleted content. Restoration depends on the original Business message having been delivered and saved before deletion.
 - View-once/self-destructing media or protected/unsupported content that Telegram does not deliver to the bot cannot be captured or recovered. No Telegram privacy restriction is bypassed.
 - Live Telegram/Bothost verification still requires deployment and a real connected Business account.
+
+
+BUSINESS FIX — DIAGNOSTICS AND FULL PERMISSIONS (10.11.2026)
+- Added persistent first_message_saved_at migration for existing Business connections.
+- After the first successfully stored incoming business_message update, the owner receives a one-time confirmation. This distinguishes successful original-message capture from later edit/delete notifications.
+- On Business connection updates, LINKCHECK compares the received rights with all 14 current BusinessBotRights permissions and reports missing permissions.
+- Deployment instructions now describe the full permission set and warn that gift/Stars transfer and message deletion rights are sensitive.
+- Important platform limit remains: edit/delete updates do not contain the previous message body. If Telegram did not deliver the original business_message update before the edit/deletion, Bot API cannot reconstruct that earlier content.
