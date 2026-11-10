@@ -94,3 +94,12 @@ BUSINESS FIX — DIAGNOSTICS AND FULL PERMISSIONS (10.11.2026)
 - On Business connection updates, LINKCHECK compares the received rights with all 14 current BusinessBotRights permissions and reports missing permissions.
 - Deployment instructions now describe the full permission set and warn that gift/Stars transfer and message deletion rights are sensitive.
 - Important platform limit remains: edit/delete updates do not contain the previous message body. If Telegram did not deliver the original business_message update before the edit/deletion, Bot API cannot reconstruct that earlier content.
+
+
+LINKCHECK PLUS — silent Business event routing hardening (10.11.2026)
+- Removed the one-time first-save confirmation message; incoming messages are archived silently without owner-facing noise.
+- Replaced four typed Business observer registrations with one raw aiogram Update observer that explicitly routes business_connection, business_message, edited_business_message, and deleted_business_messages. This provides a single auditable entry point and logs every received Business event before processing.
+- Message text and metadata are now committed to SQLite before any media download is attempted. A slow or failed media download can no longer delay or prevent the original text snapshot from being stored.
+- Incoming messages are stored only; outgoing messages from the business account are ignored by the monitoring archive.
+- Full Business permissions remain documented, including profile, stories, gifts and Stars rights. All-private-chats access is the selected chat scope; rights do not replace that setting.
+- Static Python syntax validation passed. aiogram is not installed in the build environment, so runtime dispatch and live Telegram/Bothost delivery have not been verified here.
