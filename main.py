@@ -33,6 +33,7 @@ from aiogram.filters import Command
 from aiogram import F
 from aiogram.types import (
     Message,
+    Update,
     WebAppInfo,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -5306,8 +5307,12 @@ async def handle_business_message(message: Message):
     if not sub or not sub["active"]:
         logging.info("LINKCHECK PLUS: skipped message because subscription is inactive owner=%s", connection["owner_tg_id"])
         return
+    # Store the text/metadata synchronously BEFORE any media download. A slow or
+    # failed download must never prevent the original message from being archived.
+    if message.out:
+        logging.info("LINKCHECK PLUS: ignored outgoing business message chat=%s message=%s", message.chat.id, message.message_id)
+        return
     media_type, media_file_id = business_media(message)
-    media_path = await persist_business_media(message, media_file_id)
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
     with db_connect() as conn:
@@ -5320,15 +5325,24 @@ async def handle_business_message(message: Message):
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
             "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
             "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
-            "media_file_id=excluded.media_file_id,media_path=excluded.media_path,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
+            "media_file_id=excluded.media_file_id,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
-             content, message.caption or "", media_type, media_file_id, media_path, int(bool(message.out)), now_iso())
+             content, message.caption or "", media_type, media_file_id,
+             old["media_path"] if old else None, 0, now_iso())
         )
         conn.execute(
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
             ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
         )
+    media_path = await persist_business_media(message, media_file_id)
+    if media_path:
+        with db_connect() as conn:
+            conn.execute(
+                "UPDATE plus_business_messages SET media_path=?, updated_at=? "
+                "WHERE connection_id=? AND chat_id=? AND message_id=?",
+                (media_path, now_iso(), connection_id, message.chat.id, message.message_id)
+            )
     if old and old["media_path"] and old["media_path"] != media_path:
         try:
             if os.path.isfile(old["media_path"]):
@@ -5340,28 +5354,6 @@ async def handle_business_message(message: Message):
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
         media_type or "none", bool(media_path)
     )
-    # One-time end-to-end confirmation proves that Telegram delivered the original
-    # business_message update and that LINKCHECK committed it to persistent storage.
-    first_saved = False
-    with db_connect() as conn:
-        cur = conn.execute(
-            "UPDATE plus_business_connections SET first_message_saved_at=?, updated_at=? "
-            "WHERE connection_id=? AND first_message_saved_at IS NULL",
-            (now_iso(), now_iso(), connection_id)
-        )
-        first_saved = cur.rowcount > 0
-    if first_saved:
-        try:
-            await bot.send_message(
-                connection["user_chat_id"],
-                "<b>LINKCHECK PLUS: мониторинг проверен</b>\n\n"
-                "Telegram доставил первое новое сообщение, и LINKCHECK сохранил его копию. "
-                "Теперь изменения и удаления этого сообщения можно обработать по сохранённой версии."
-            )
-        except Exception:
-            logging.exception("LINKCHECK PLUS: could not send first-save confirmation owner=%s", connection["owner_tg_id"])
-
-
 async def send_business_snapshot(owner_chat_id: int, record, heading: str):
     chat = html.escape(str(record["chat_title"] or record["chat_id"]))
     sender = html.escape(str(record["sender_label"] or "Неизвестно"))
@@ -5509,10 +5501,37 @@ async def plus_retention_cleanup_loop():
 # Register Telegram update handlers. Polling below explicitly requests their update types.
 dp.pre_checkout_query.register(handle_plus_pre_checkout)
 dp.message.register(handle_plus_successful_payment, F.successful_payment)
-dp.business_connection.register(handle_business_connection)
-dp.business_message.register(handle_business_message)
-dp.edited_business_message.register(handle_edited_business_message)
-dp.deleted_business_messages.register(handle_deleted_business_messages)
+async def handle_business_update(update: Update):
+    """Single raw-update entry point for all Business events.
+
+    Routing from Update itself avoids relying on separate observer registration
+    for Business update variants. Every received event is logged before handling.
+    """
+    try:
+        if update.business_connection is not None:
+            logging.info("LINKCHECK PLUS: received business_connection update_id=%s", update.update_id)
+            await handle_business_connection(update.business_connection)
+        elif update.business_message is not None:
+            msg = update.business_message
+            logging.info("LINKCHECK PLUS: received business_message update_id=%s connection=%s chat=%s message=%s outgoing=%s",
+                         update.update_id, msg.business_connection_id, msg.chat.id, msg.message_id, bool(msg.out))
+            await handle_business_message(msg)
+        elif update.edited_business_message is not None:
+            msg = update.edited_business_message
+            logging.info("LINKCHECK PLUS: received edited_business_message update_id=%s connection=%s chat=%s message=%s",
+                         update.update_id, msg.business_connection_id, msg.chat.id, msg.message_id)
+            await handle_edited_business_message(msg)
+        elif update.deleted_business_messages is not None:
+            event = update.deleted_business_messages
+            logging.info("LINKCHECK PLUS: received deleted_business_messages update_id=%s connection=%s chat=%s ids=%s",
+                         update.update_id, event.business_connection_id, event.chat.id, list(event.message_ids))
+            await handle_deleted_business_messages(event)
+    except Exception:
+        logging.exception("LINKCHECK PLUS: unhandled error while processing Telegram Business update_id=%s", update.update_id)
+
+# Business events are routed from the raw Update observer to avoid missed dispatch
+# caused by version-specific typed observer registration behavior.
+dp.update.register(handle_business_update)
 
 # ============================================================
 # WEB SERVER
