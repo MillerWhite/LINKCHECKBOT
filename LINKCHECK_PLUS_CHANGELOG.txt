@@ -152,3 +152,13 @@ CHECKS
 - JavaScript syntax check: PASS.
 - Isolated tests: all 14 MTProto rights flags normalize to true; all 14 named Telethon fields normalize to true; naive legacy timestamps parse as UTC — PASS.
 - No live Telegram, payment, SQLite production DB, or Bothost integration test was performed in this build environment.
+
+
+LINKCHECK PLUS — исправление выбора источника Business-разрешений и диагностика — 10.11.2026
+- Исправлен выбор между Bot API и MTProto: MTProto больше не может заменить полный Bot API набор прав менее полным набором только потому, что вернул объект rights. Сравнивается фактическое число отсутствующих прав.
+- Bot API остаётся источником при равном или лучшем наборе разрешений; MTProto используется, если подтверждает подключение и даёт более полный набор либо Bot API записи ещё нет.
+- Добавлена явная диагностика причины недоступности MTProto: сессия не запущена, отсутствует API-метод, аккаунт Telethon не совпадает с владельцем Mini App, RPC завершился ошибкой.
+- При старте логируется Telegram ID/username Telethon-сессии.
+- При синхронизации Business connection логируется список отсутствующих прав.
+- Каждый запрос статуса пишет итоговую диагностическую строку: владелец, путь SQLite, наличие активной подписки, наличие записи Business, Bot API missing, MTProto missing и выбранный источник.
+- Путь SQLite только логируется на сервере и не возвращается клиенту. База данных и persistent-файлы не удаляются и не пересоздаются.

@@ -5082,18 +5082,29 @@ def normalize_plus_business_rights(rights_obj):
 
 
 async def inspect_owner_business_bot(owner_id: int):
-    """Inspect Business bots only when Telethon session belongs to this user."""
-    if not tg_ready or tg_client is None or functions is None:
-        return None
+    """Inspect Business bots and return an explicit diagnostic for every exit path."""
+    if not tg_ready or tg_client is None:
+        reason = "telethon_not_ready"
+        logging.warning("LINKCHECK PLUS: MTProto inspection unavailable owner=%s reason=%s start_error=%s",
+                        owner_id, reason, tg_start_error or "not_started")
+        return {"available": False, "reason": reason}
+    if functions is None:
+        logging.error("LINKCHECK PLUS: MTProto inspection unavailable owner=%s reason=telethon_functions_missing", owner_id)
+        return {"available": False, "reason": "telethon_functions_missing"}
     try:
         me = await tg_client.get_me()
-        if not me or int(me.id) != int(owner_id):
-            return None
+        session_owner_id = int(me.id) if me else 0
+        if not session_owner_id or session_owner_id != int(owner_id):
+            logging.warning(
+                "LINKCHECK PLUS: MTProto session owner mismatch miniapp_owner=%s session_owner=%s; cannot inspect this user's Business bots",
+                owner_id, session_owner_id or None
+            )
+            return {"available": False, "reason": "session_owner_mismatch", "session_owner_id": session_owner_id or None}
         account_api = getattr(functions, "account", None)
         request_type = getattr(account_api, "GetConnectedBotsRequest", None)
         if request_type is None:
-            logging.error("LINKCHECK PLUS: Telethon layer lacks account.GetConnectedBotsRequest")
-            return None
+            logging.error("LINKCHECK PLUS: Telethon layer lacks account.GetConnectedBotsRequest owner=%s", owner_id)
+            return {"available": False, "reason": "get_connected_bots_request_missing", "session_owner_id": session_owner_id}
         result = await tg_client(request_type())
         connected_bots = getattr(result, "connected_bots", None)
         if connected_bots is None:
@@ -5117,12 +5128,17 @@ async def inspect_owner_business_bot(owner_id: int):
                 expected_bot_id, owner_id, verified, missing,
                 type(rights_obj).__name__ if rights_obj is not None else "None"
             )
-            return {"connected": True, "rights": rights, "rights_verified": verified}
-        logging.info("LINKCHECK PLUS: MTProto did not find bot=%s in owner=%s connected bots", expected_bot_id, owner_id)
-        return {"connected": False, "rights": {}, "rights_verified": True}
+            return {"available": True, "connected": True, "rights": rights,
+                    "rights_verified": verified, "missing_rights": missing,
+                    "session_owner_id": session_owner_id}
+        logging.info("LINKCHECK PLUS: MTProto did not find bot=%s in owner=%s connected bots count=%s",
+                     expected_bot_id, owner_id, len(connected_bots or []))
+        return {"available": True, "connected": False, "rights": {},
+                "rights_verified": True, "missing_rights": list(PLUS_REQUIRED_BUSINESS_RIGHTS),
+                "session_owner_id": session_owner_id}
     except Exception:
         logging.exception("LINKCHECK PLUS: MTProto Business inspection failed for owner=%s", owner_id)
-        return None
+        return {"available": False, "reason": "mtproto_rpc_failed"}
 
 async def api_plus_status(request):
     user = authenticated_user(request)
@@ -5169,27 +5185,70 @@ async def api_plus_status(request):
     known_connection = connection is not None
     required_rights = list(PLUS_REQUIRED_BUSINESS_RIGHTS)
     stored_rights = {}
+    bot_api_has_rights_payload = False
     if connection and connection["rights_json"]:
         try:
             stored_rights_raw = json.loads(connection["rights_json"])
-            stored_rights = normalize_plus_business_rights(stored_rights_raw) if stored_rights_raw else {}
+            bot_api_has_rights_payload = isinstance(stored_rights_raw, dict) and bool(stored_rights_raw)
+            stored_rights = normalize_plus_business_rights(stored_rights_raw) if bot_api_has_rights_payload else {}
         except (TypeError, ValueError):
             logging.exception("LINKCHECK PLUS: stored Business rights JSON is invalid for owner=%s", owner_id)
             stored_rights = {}
-    bot_api_rights_verified = bool(connection and all(right in stored_rights for right in required_rights))
-    business_payload = ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"], "source": "bot_api", "rights": stored_rights, "rights_verified": bot_api_rights_verified} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None, "source": None, "rights": {}, "rights_verified": False})
+            bot_api_has_rights_payload = False
+    bot_api_rights_verified = bool(connection and bot_api_has_rights_payload and all(right in stored_rights for right in required_rights))
+    bot_api_missing = ([right for right in required_rights if not bool(stored_rights.get(right, False))]
+                       if bot_api_has_rights_payload else list(required_rights))
+    business_payload = ({"known": True, "connected": bool(connection["is_enabled"]),
+                         "connected_at": connection["connected_at"], "updated_at": connection["updated_at"],
+                         "source": "bot_api", "rights": stored_rights,
+                         "rights_verified": bot_api_rights_verified}
+                        if known_connection else
+                        {"known": False, "connected": None, "connected_at": None, "updated_at": None,
+                         "source": None, "rights": {}, "rights_verified": False})
 
-    # A positive MTProto match with verified rights is the strongest owner-side
-    # result. If MTProto is unavailable or incomplete, retain a verified Bot API
-    # connection rather than overwriting it with an inconclusive result.
-    if mtproto_business and mtproto_business.get("connected"):
-        mtproto_rights_verified = bool(mtproto_business.get("rights_verified"))
-        if mtproto_rights_verified or not (known_connection and bot_api_rights_verified):
-            business_payload = {"known": True, "connected": True, "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {}), "rights_verified": mtproto_rights_verified}
-    elif mtproto_business and not mtproto_business.get("connected") and not (known_connection and connection["is_enabled"]):
-        business_payload = {"known": True, "connected": False, "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": {}, "rights_verified": False}
+    mtproto_missing = list(mtproto_business.get("missing_rights", [])) if mtproto_business and mtproto_business.get("rights_verified") else list(required_rights)
+    mtproto_is_connected = bool(mtproto_business and mtproto_business.get("available") and mtproto_business.get("connected"))
 
-    business_payload["missing_rights"] = ([right for right in required_rights if not bool(business_payload.get("rights", {}).get(right, False))] if business_payload.get("connected") and business_payload.get("rights_verified") else [])
+    # Compare the actual permission sets. Merely receiving an MTProto rights
+    # object does not make it more authoritative than a complete Bot API result.
+    # This prevents a partial/older MTProto schema from downgrading all 14 rights
+    # that Telegram's Bot API has already confirmed.
+    selected_source = "bot_api" if known_connection else None
+    if mtproto_is_connected:
+        if not known_connection or not connection["is_enabled"]:
+            business_payload = {"known": True, "connected": True,
+                                "connected_at": connection["connected_at"] if connection else None,
+                                "updated_at": now_iso(), "source": "mtproto",
+                                "rights": mtproto_business.get("rights", {}),
+                                "rights_verified": bool(mtproto_business.get("rights_verified"))}
+            selected_source = "mtproto"
+        elif len(mtproto_missing) < len(bot_api_missing):
+            business_payload = {"known": True, "connected": True,
+                                "connected_at": connection["connected_at"], "updated_at": now_iso(),
+                                "source": "mtproto", "rights": mtproto_business.get("rights", {}),
+                                "rights_verified": bool(mtproto_business.get("rights_verified"))}
+            selected_source = "mtproto"
+    elif mtproto_business and mtproto_business.get("available") and not mtproto_business.get("connected"):
+        # A verified negative owner-side result must not override an enabled
+        # Bot API connection record, but it is useful when no active record exists.
+        if not (known_connection and connection["is_enabled"]):
+            business_payload = {"known": True, "connected": False,
+                                "connected_at": connection["connected_at"] if connection else None,
+                                "updated_at": now_iso(), "source": "mtproto",
+                                "rights": {}, "rights_verified": True}
+            selected_source = "mtproto"
+
+    business_payload["missing_rights"] = (
+        [right for right in required_rights if not bool(business_payload.get("rights", {}).get(right, False))]
+        if business_payload.get("connected") and business_payload.get("rights_verified") else []
+    )
+    logging.info(
+        "LINKCHECK PLUS STATUS: owner=%s db=%s subscription_active=%s connection_record=%s bot_api_enabled=%s bot_api_rights_verified=%s bot_api_missing=%s mtproto=%s mtproto_missing=%s selected=%s final_connected=%s final_missing=%s",
+        owner_id, os.path.abspath(DB_PATH), bool(sub and sub.get("active")), known_connection,
+        bool(connection and connection["is_enabled"]), bot_api_rights_verified, bot_api_missing,
+        (mtproto_business or {}).get("reason", "connected" if mtproto_is_connected else "not_checked"),
+        mtproto_missing, selected_source, business_payload.get("connected"), business_payload.get("missing_rights", [])
+    )
 
     return web.json_response({
         "payments_enabled": PLUS_PAYMENTS_ENABLED,
@@ -5470,8 +5529,9 @@ async def handle_business_connection(connection):
                 os.remove(media_path)
         except OSError:
             logging.exception("LINKCHECK PLUS: could not remove disconnected media file")
-    logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s",
-                 owner_id, connection.id, bool(connection.is_enabled))
+    missing = [key for key in PLUS_REQUIRED_BUSINESS_RIGHTS if not rights.get(key, False)] if rights else list(PLUS_REQUIRED_BUSINESS_RIGHTS)
+    logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s rights_present=%s missing=%s",
+                 owner_id, connection.id, bool(connection.is_enabled), bool(connection.rights), missing)
 
 
 async def refresh_business_connection(connection_id: str):
@@ -5979,6 +6039,9 @@ async def start_telegram_checker():
         )
         await tg_client.start()
         tg_ready = True
+        me = await tg_client.get_me()
+        logging.info("LINKCHECK Telethon session identity: id=%s username=%s",
+                     getattr(me, "id", None), getattr(me, "username", None))
         logging.info("Резервная проверка через MTProto подключена; основной способ проверки публичных username — страница t.me.")
     except Exception as exc:
         tg_start_error = f"{type(exc).__name__}: {exc}"

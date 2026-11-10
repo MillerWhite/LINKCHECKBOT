@@ -123,3 +123,12 @@ LINKCHECK PLUS STATUS DIAGNOSTICS — 10.11.2026
 - The startup log prints `LINKCHECK SQLite database path: ...`. Confirm this path remains the same across redeployments and points into persistent `/app/data`. If the path changes, the service may be reading a different empty database, which can make a valid subscription appear missing. Do not delete or replace the existing DB.
 - If the status still says rights are missing, inspect the exact `missing=[...]` list in Bothost logs after pressing “Обновить статус”; this is the canonical diagnostic, not the UI label alone.
 - If the log says MTProto inspection failed/timed out, verify the saved Telethon session is logged into the same Telegram account opening the Mini App and that `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TG_SESSION` still point to the existing session. Do not create a new session over the old one.
+
+
+LINKCHECK PLUS — STATUS SOURCE SELECTION FIX (10.11.2026)
+1. Этот выпуск исправляет выбор источника прав: полный результат Bot API не должен заменяться неполным результатом MTProto.
+2. После установки нажмите «Обновить статус» в LINKCHECK PLUS и проверьте лог `LINKCHECK PLUS STATUS:`. В нём будут `subscription_active`, `connection_record`, `bot_api_missing`, `mtproto`, `mtproto_missing`, `selected`, `final_connected`, `final_missing`.
+3. Сверьте `LINKCHECK SQLite database path` с прежним постоянным путём. Не меняйте DB_PATH на новый путь и не удаляйте `/app/data`.
+4. При `session_owner_mismatch` Telethon-сессия авторизована под другим Telegram ID, чем аккаунт Mini App. Такая сессия не может перечислить Business-подключения другого аккаунта.
+5. При `connection_record=false` и `mtproto`=`session_owner_mismatch` серверу неоткуда получить Bot API connection_id: Telegram передаёт его в update `business_connection`. В этом случае нужно восстановить получение этого update, а не выдумывать connection_id.
+6. Выполнены статические проверки Python/JavaScript и ZIP integrity. Реальные Telegram Business updates, Stars и запуск на Bothost требуют проверки после ручного развёртывания.
