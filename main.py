@@ -45,7 +45,7 @@ from aiogram.types import (
 from dotenv import load_dotenv
 
 try:
-    from telethon import TelegramClient, functions
+    from telethon import TelegramClient, functions, events
     from telethon.errors import FloodWaitError, RPCError
     from telethon.tl.types import (
         User,
@@ -56,6 +56,7 @@ try:
 except ImportError:
     TelegramClient = None
     functions = None
+    events = None
     FloodWaitError = RPCError = Exception
     User = Chat = Channel = None
     EmojiStatusCollectible = None
@@ -163,6 +164,11 @@ dp = Dispatcher()
 
 # Keep background Business media downloads alive until completion.
 BUSINESS_MEDIA_TASKS = set()
+MT_PROTO_MESSAGE_CACHE = {}
+MT_PROTO_MESSAGE_CACHE_TTL = 30 * 24 * 60 * 60
+MT_PROTO_MESSAGE_CACHE_MAX = 20000
+MT_PROTO_CAPTURE_OWNER_ID = None
+MT_PROTO_CAPTURE_HANDLER_ATTACHED = False
 
 tg_client = None
 tg_ready = False
@@ -5803,6 +5809,115 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bo
             return False
 
 
+
+def cache_mtproto_message_snapshot(event):
+    """Cache private messages in RAM only; promote only after a Business update confirms them."""
+    try:
+        if not getattr(event, "is_private", False):
+            return
+        message = getattr(event, "message", None)
+        chat_id = getattr(event, "chat_id", None)
+        owner_id = MT_PROTO_CAPTURE_OWNER_ID
+        if message is None or chat_id is None or not owner_id:
+            return
+        with db_connect() as conn:
+            active = conn.execute(
+                "SELECT 1 FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1 LIMIT 1",
+                (int(owner_id),)
+            ).fetchone()
+        if not active:
+            return
+        entity = getattr(event, "chat", None)
+        chat_title = (
+            getattr(entity, "title", None)
+            or " ".join(x for x in (
+                getattr(entity, "first_name", None), getattr(entity, "last_name", None)
+            ) if x)
+            or getattr(entity, "username", None)
+            or str(chat_id)
+        )
+        content = str(getattr(message, "message", None) or getattr(message, "text", None) or "")
+        media_type = None
+        if getattr(message, "photo", None): media_type = "photo"
+        elif getattr(message, "video", None): media_type = "video"
+        elif getattr(message, "gif", None): media_type = "animation"
+        elif getattr(message, "voice", None): media_type = "voice"
+        elif getattr(message, "audio", None): media_type = "audio"
+        elif getattr(message, "sticker", None): media_type = "sticker"
+        elif getattr(message, "document", None): media_type = "document"
+        if not content and media_type:
+            content = {
+                "photo":"[Фото]", "video":"[Видео]", "animation":"[GIF]",
+                "voice":"[Голосовое сообщение]", "audio":"[Аудио]",
+                "sticker":"[Стикер]", "document":"[Файл]"
+            }.get(media_type, "[Медиа]")
+        date_value = getattr(message, "date", None)
+        snapshot = {
+            "chat_id": int(chat_id), "message_id": int(message.id),
+            "message_date": date_value.isoformat() if date_value else now_iso(),
+            "chat_title": str(chat_title)[:256],
+            "sender_label": "Вы" if bool(getattr(message, "out", False)) else str(chat_title)[:160],
+            "text_content": content, "caption": content if media_type else "",
+            "media_type": media_type, "media_file_id": None, "media_path": None,
+            "is_outgoing": int(bool(getattr(message, "out", False))),
+            "cached_at": time.time()
+        }
+        MT_PROTO_MESSAGE_CACHE[(int(chat_id), int(message.id))] = snapshot
+        if len(MT_PROTO_MESSAGE_CACHE) > MT_PROTO_MESSAGE_CACHE_MAX:
+            oldest = sorted(MT_PROTO_MESSAGE_CACHE, key=lambda k: MT_PROTO_MESSAGE_CACHE[k].get("cached_at", 0))
+            for key in oldest[:len(MT_PROTO_MESSAGE_CACHE) - MT_PROTO_MESSAGE_CACHE_MAX]:
+                MT_PROTO_MESSAGE_CACHE.pop(key, None)
+    except Exception:
+        logging.exception("LINKCHECK PLUS MTProto message cache failed")
+
+
+async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id: int,
+                                                  chat_id: int, message_id: int):
+    """Promote an in-memory original into SQLite after a Business edit/delete update."""
+    snapshot = MT_PROTO_MESSAGE_CACHE.get((int(chat_id), int(message_id)))
+    if not snapshot:
+        return None
+    if time.time() - float(snapshot.get("cached_at", 0)) > MT_PROTO_MESSAGE_CACHE_TTL:
+        MT_PROTO_MESSAGE_CACHE.pop((int(chat_id), int(message_id)), None)
+        return None
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO plus_business_messages("
+            "connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,"
+            "text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at"
+            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (str(connection_id), int(owner_tg_id), int(chat_id), int(message_id),
+             snapshot.get("message_date"), snapshot.get("chat_title"), snapshot.get("sender_label"),
+             snapshot.get("text_content"), snapshot.get("caption"), snapshot.get("media_type"),
+             None, None, int(snapshot.get("is_outgoing", 0)), now_iso())
+        )
+        row = conn.execute(
+            "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+            (str(connection_id), int(chat_id), int(message_id))
+        ).fetchone()
+    if row:
+        logging.info("LINKCHECK PLUS: recovered original Business snapshot from MTProto cache owner=%s chat=%s message=%s",
+                     owner_tg_id, chat_id, message_id)
+    return row
+
+
+async def attach_mtproto_business_snapshot_listener(owner_tg_id: int):
+    """Attach a RAM-only private-message cache to the connected Telegram account."""
+    global MT_PROTO_CAPTURE_OWNER_ID, MT_PROTO_CAPTURE_HANDLER_ATTACHED
+    if tg_client is None or events is None:
+        logging.warning("LINKCHECK PLUS MTProto snapshot cache unavailable: Telethon events not installed")
+        return
+    MT_PROTO_CAPTURE_OWNER_ID = int(owner_tg_id)
+    if MT_PROTO_CAPTURE_HANDLER_ATTACHED:
+        return
+    async def on_private_message(event):
+        cache_mtproto_message_snapshot(event)
+    tg_client.add_event_handler(on_private_message, events.NewMessage())
+    MT_PROTO_CAPTURE_HANDLER_ATTACHED = True
+    logging.info("LINKCHECK PLUS MTProto snapshot cache attached owner=%s mode=in-memory-only ttl_days=30 max_messages=20000",
+                 owner_tg_id)
+
+
 async def handle_edited_business_message(message: Message):
     logging.info("LINKCHECK PLUS: edited_business_message handler started connection=%s chat=%s message=%s",
                  message.business_connection_id, message.chat.id, message.message_id)
@@ -5832,6 +5947,14 @@ async def handle_edited_business_message(message: Message):
     if not connection:
         logging.warning("LINKCHECK PLUS: edit received for unknown/disabled connection %s", connection_id)
         return
+    if not old:
+        for _ in range(10):
+            old = await recover_business_snapshot_from_mtproto(
+                connection_id, int(connection["owner_tg_id"]), message.chat.id, message.message_id
+            )
+            if old:
+                break
+            await asyncio.sleep(0.1)
     sub = plus_subscription_for(int(connection["owner_tg_id"]))
     if not sub or not sub["active"]:
         return
@@ -5844,13 +5967,19 @@ async def handle_edited_business_message(message: Message):
             )
             return
     else:
-        logging.warning("LINKCHECK PLUS: edited message has no saved original owner=%s chat=%s message=%s", connection["owner_tg_id"], message.chat.id, message.message_id)
+        logging.error(
+            "LINKCHECK PLUS: original snapshot missing in both Bot API archive and MTProto cache owner=%s chat=%s message=%s",
+            connection["owner_tg_id"], message.chat.id, message.message_id
+        )
+        current_text = business_message_content(message) or "[Сообщение без текстового содержимого]"
         await bot.send_message(
             connection["user_chat_id"],
-            "<b>LINKCHECK PLUS: обнаружено изменение сообщения</b>\n"
-            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\n"
-            "Исходная версия не найдена в локальном хранилище, поэтому показать её не удалось. "
-            "Текущую версию сохраню для последующих событий."
+            "<b>LINKCHECK PLUS: получена новая версия сообщения</b>\\n"
+            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\\n"
+            "<b>Текст, который Telegram передал после изменения:</b>\\n"
+            f"<pre>{html.escape(current_text[:3000])}</pre>\\n"
+            "<i>Исходная версия не пришла ни в архив Bot API, ни в резервный кэш MTProto. "
+            "Telegram не предоставляет старый текст в событии редактирования.</i>"
         )
     await handle_business_message(message)
     with db_connect() as conn:
@@ -5898,6 +6027,15 @@ async def handle_deleted_business_messages(event):
                 rows.append(dict(row))
             else:
                 missing.append(int(message_id))
+    recovered = []
+    for message_id in list(missing):
+        row = await recover_business_snapshot_from_mtproto(
+            event.business_connection_id, int(connection["owner_tg_id"]), event.chat.id, message_id
+        )
+        if row:
+            recovered.append(dict(row))
+            missing.remove(int(message_id))
+    rows.extend(recovered)
     logging.info(
         "LINKCHECK PLUS: deleted_business_messages owner=%s chat=%s ids=%s restored=%s missing=%s",
         connection["owner_tg_id"], event.chat.id, list(event.message_ids), len(rows), len(missing)
@@ -6260,6 +6398,7 @@ async def start_telegram_checker():
         me = await tg_client.get_me()
         logging.info("LINKCHECK Telethon session identity: id=%s username=%s",
                      getattr(me, "id", None), getattr(me, "username", None))
+        await attach_mtproto_business_snapshot_listener(int(me.id))
         logging.info("Резервная проверка через MTProto подключена; основной способ проверки публичных username — страница t.me.")
     except Exception as exc:
         tg_start_error = f"{type(exc).__name__}: {exc}"
