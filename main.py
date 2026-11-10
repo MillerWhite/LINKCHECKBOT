@@ -5812,8 +5812,8 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bo
 
 
 def cache_mtproto_message_snapshot(event):
-    global MT_PROTO_CACHE_INSERT_COUNT
     """Cache private messages in RAM only; promote only after a Business update confirms them."""
+    global MT_PROTO_CACHE_INSERT_COUNT
     try:
         if not getattr(event, "is_private", False):
             return
