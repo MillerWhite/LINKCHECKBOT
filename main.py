@@ -5771,6 +5771,27 @@ async def handle_business_message(message: Message):
     await persist_business_media_snapshot(
         message, connection_id, media_file_id, old["media_path"] if old else None
     )
+    if media_type:
+        # If Bot API could not download temporary/protected media, immediately
+        # promote the matching Telethon copy after Bot API confirms this is a
+        # Business message. This preserves one-time media before it disappears.
+        with db_connect() as conn:
+            saved_media = conn.execute(
+                "SELECT media_path FROM plus_business_messages "
+                "WHERE connection_id=? AND chat_id=? AND message_id=?",
+                (connection_id, message.chat.id, message.message_id)
+            ).fetchone()
+        if not saved_media or not saved_media["media_path"]:
+            cache_key = (int(message.chat.id), int(message.message_id))
+            for _ in range(30):
+                if cache_key in MT_PROTO_MESSAGE_CACHE:
+                    break
+                await asyncio.sleep(0.1)
+            if cache_key in MT_PROTO_MESSAGE_CACHE:
+                await recover_business_snapshot_from_mtproto(
+                    connection_id, int(connection["owner_tg_id"]),
+                    message.chat.id, message.message_id
+                )
     logging.info(
         "LINKCHECK PLUS: saved Business message snapshot owner=%s chat=%s message=%s outgoing=%s media=%s text_length=%s",
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
