@@ -30,11 +30,14 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram import F
 from aiogram.types import (
     Message,
     WebAppInfo,
     InlineKeyboardMarkup,
-    InlineKeyboardButton
+    InlineKeyboardButton,
+    LabeledPrice,
+    PreCheckoutQuery
 )
 
 from dotenv import load_dotenv
@@ -76,6 +79,7 @@ ADMIN_IDS = {
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "linkcheck.db"))
 PORT = int(os.getenv("PORT", "8080"))
+PLUS_PAYMENTS_ENABLED = os.getenv("PLUS_PAYMENTS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
 INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "86400"))
 
 # Bothost's documentation uses TELEGRAM_API_ID / TELEGRAM_API_HASH;
@@ -1142,6 +1146,81 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_project_views_viewer "
             "ON project_views(viewer_tg_id, viewed_at DESC)"
+        )
+        # LINKCHECK PLUS: подписки, платежи Telegram Stars и Telegram Business.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_subscriptions (
+                tg_id INTEGER PRIMARY KEY,
+                plan_code TEXT,
+                started_at TEXT,
+                expires_at TEXT,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_invoice_intents (
+                payload TEXT PRIMARY KEY,
+                tg_id INTEGER NOT NULL,
+                plan_code TEXT NOT NULL,
+                amount_stars INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tg_id INTEGER NOT NULL,
+                plan_code TEXT NOT NULL,
+                amount_stars INTEGER NOT NULL,
+                currency TEXT NOT NULL,
+                telegram_payment_charge_id TEXT NOT NULL UNIQUE,
+                provider_payment_charge_id TEXT,
+                paid_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plus_payments_user "
+            "ON plus_payments(tg_id, paid_at DESC)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_business_connections (
+                connection_id TEXT PRIMARY KEY,
+                owner_tg_id INTEGER NOT NULL,
+                user_chat_id INTEGER NOT NULL,
+                is_enabled INTEGER NOT NULL DEFAULT 1,
+                rights_json TEXT,
+                connected_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_business_messages (
+                connection_id TEXT NOT NULL,
+                owner_tg_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                message_date TEXT,
+                chat_title TEXT,
+                sender_label TEXT,
+                text_content TEXT,
+                caption TEXT,
+                media_type TEXT,
+                media_file_id TEXT,
+                is_outgoing INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(connection_id, chat_id, message_id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
+            "ON plus_business_messages(owner_tg_id, updated_at DESC)"
+        )
+        # Старые сохранённые сообщения не храним дольше 30 дней.
+        conn.execute(
+            "DELETE FROM plus_business_messages WHERE updated_at < ?",
+            ((datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),)
         )
         seed_catalog(conn)
 
@@ -4817,6 +4896,415 @@ async def watchlist_monitor_loop():
 
 
 # ============================================================
+# LINKCHECK PLUS — TELEGRAM STARS + TELEGRAM BUSINESS
+# ============================================================
+
+PLUS_PLANS = {
+    "1m": {"title": "1 месяц", "days": 30, "stars": 200},
+    "6m": {"title": "6 месяцев", "days": 180, "stars": 1000},
+    "12m": {"title": "12 месяцев", "days": 365, "stars": 1800},
+}
+PLUS_MESSAGE_RETENTION_DAYS = 30
+
+
+def plus_subscription_for(tg_id: int):
+    with db_connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM plus_subscriptions WHERE tg_id=?", (tg_id,)
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        expires = datetime.fromisoformat(row["expires_at"])
+        active = expires > datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        active = False
+    result = dict(row)
+    result["active"] = active
+    return result
+
+
+def plus_connection_count(tg_id: int) -> int:
+    with db_connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM plus_business_connections "
+            "WHERE owner_tg_id=? AND is_enabled=1", (tg_id,)
+        ).fetchone()
+    return int(row["n"] if row else 0)
+
+
+async def api_plus_status(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку", 401)
+    upsert_user(user["id"], user.get("username"))
+    sub = plus_subscription_for(user["id"])
+    with db_connect() as conn:
+        payments = conn.execute(
+            "SELECT plan_code, amount_stars, paid_at, expires_at "
+            "FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10",
+            (user["id"],)
+        ).fetchall()
+        connection = conn.execute(
+            "SELECT is_enabled, connected_at, updated_at FROM plus_business_connections "
+            "WHERE owner_tg_id=? ORDER BY is_enabled DESC, updated_at DESC LIMIT 1", (user["id"],)
+        ).fetchone()
+    return web.json_response({
+        "payments_enabled": PLUS_PAYMENTS_ENABLED,
+        "plans": {key: {"title": value["title"], "days": value["days"], "stars": value["stars"]}
+                  for key, value in PLUS_PLANS.items()},
+        "subscription": ({
+            "active": bool(sub["active"]), "plan": sub.get("plan_code"),
+            "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")
+        } if sub else None),
+        "business_connection": ({
+            "connected": bool(connection["is_enabled"]),
+            "connected_at": connection["connected_at"]
+        } if connection else {"connected": False}),
+        "payments": [dict(row) for row in payments],
+        "message_retention_days": PLUS_MESSAGE_RETENTION_DAYS
+    })
+
+
+async def api_plus_invoice(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку", 401)
+    try:
+        data = await read_json(request)
+    except web.HTTPException:
+        return json_error("Некорректный запрос")
+    if not PLUS_PAYMENTS_ENABLED:
+        return json_error("Оплата LINKCHECK PLUS временно отключена до подтверждения доступности вывода вознаграждений.", 503)
+    plan_code = str(data.get("plan", ""))
+    plan = PLUS_PLANS.get(plan_code)
+    if not plan:
+        return json_error("Неизвестный тариф")
+    payload = f"linkcheck_plus:{user['id']}:{plan_code}:{secrets.token_urlsafe(12)}"
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT INTO plus_invoice_intents(payload,tg_id,plan_code,amount_stars,created_at,status) "
+            "VALUES(?,?,?,?,?,'pending')",
+            (payload, user["id"], plan_code, plan["stars"], now_iso())
+        )
+    try:
+        invoice_url = await bot.create_invoice_link(
+            title=f"LINKCHECK PLUS — {plan['title']}",
+            description=(
+                f"Доступ к LINKCHECK PLUS на {plan['days']} дней. "
+                "Мониторинг изменений и удалений сообщений Telegram Business "
+                "в пределах данных, доставленных Telegram боту."
+            ),
+            payload=payload,
+            provider_token="",
+            currency="XTR",
+            prices=[LabeledPrice(label=f"LINKCHECK PLUS · {plan['title']}", amount=plan["stars"])],
+        )
+    except Exception:
+        logging.exception("Не удалось создать Stars invoice для LINKCHECK PLUS")
+        with db_connect() as conn:
+            conn.execute("UPDATE plus_invoice_intents SET status='failed' WHERE payload=?", (payload,))
+        return json_error("Не удалось создать счёт Telegram Stars. Попробуйте позже.", 502)
+    return web.json_response({"invoice_url": invoice_url, "plan": plan_code, "stars": plan["stars"]})
+
+
+async def handle_plus_pre_checkout(query: PreCheckoutQuery):
+    valid = False
+    with db_connect() as conn:
+        intent = conn.execute(
+            "SELECT * FROM plus_invoice_intents WHERE payload=? AND tg_id=? AND status='pending'",
+            (query.invoice_payload, query.from_user.id)
+        ).fetchone()
+        if intent and query.currency == "XTR" and query.total_amount == intent["amount_stars"]:
+            # Atomically reserve this invoice payload for a single checkout.
+            changed = conn.execute(
+                "UPDATE plus_invoice_intents SET status='checkout' "
+                "WHERE payload=? AND status='pending'",
+                (query.invoice_payload,)
+            ).rowcount
+            valid = changed == 1
+    if valid:
+        await query.answer(ok=True)
+    else:
+        await query.answer(ok=False, error_message="Счёт недействителен или уже использован. Создайте новый счёт в LINKCHECK.")
+
+
+async def handle_plus_successful_payment(message: Message):
+    payment = message.successful_payment
+    if not payment or payment.currency != "XTR" or not message.from_user:
+        return
+    with db_connect() as conn:
+        already_recorded = conn.execute(
+            "SELECT 1 FROM plus_payments WHERE telegram_payment_charge_id=?",
+            (payment.telegram_payment_charge_id,)
+        ).fetchone()
+        if already_recorded:
+            return
+        intent = conn.execute(
+            "SELECT * FROM plus_invoice_intents WHERE payload=? AND tg_id=? AND status='checkout'",
+            (payment.invoice_payload, message.from_user.id)
+        ).fetchone()
+        if not intent or int(payment.total_amount) != int(intent["amount_stars"]):
+            logging.warning("Получен неподтверждённый LINKCHECK PLUS payment update от %s", message.from_user.id)
+            return
+        plan = PLUS_PLANS.get(intent["plan_code"])
+        if not plan:
+            return
+        now = datetime.now(timezone.utc)
+        current = conn.execute(
+            "SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (message.from_user.id,)
+        ).fetchone()
+        try:
+            current_expiry = datetime.fromisoformat(current["expires_at"]) if current else now
+        except (TypeError, ValueError):
+            current_expiry = now
+        base = max(now, current_expiry)
+        expires = base + timedelta(days=plan["days"])
+        conn.execute(
+            "INSERT INTO plus_payments(tg_id,plan_code,amount_stars,currency,telegram_payment_charge_id,provider_payment_charge_id,paid_at,expires_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (message.from_user.id, intent["plan_code"], payment.total_amount, payment.currency,
+             payment.telegram_payment_charge_id, payment.provider_payment_charge_id, now.isoformat(), expires.isoformat())
+        )
+        conn.execute(
+            "INSERT INTO plus_subscriptions(tg_id,plan_code,started_at,expires_at,updated_at) "
+            "VALUES(?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET "
+            "plan_code=excluded.plan_code, expires_at=excluded.expires_at, updated_at=excluded.updated_at",
+            (message.from_user.id, intent["plan_code"], now.isoformat(), expires.isoformat(), now.isoformat())
+        )
+        conn.execute("UPDATE plus_invoice_intents SET status='paid' WHERE payload=?", (payment.invoice_payload,))
+    await message.answer(
+        "<b>LINKCHECK PLUS активирован</b>\n\n"
+        f"Тариф: {html.escape(plan['title'])}\n"
+        f"Оплачено: {int(payment.total_amount)} ⭐\n"
+        f"Действует до: {expires.strftime('%d.%m.%Y %H:%M UTC')}\n\n"
+        "Подключите LINKCHECK в Telegram Business, чтобы начать мониторинг."
+    )
+
+
+def business_media(message: Message):
+    media_fields = (
+        ("photo", "photo"), ("video", "video"), ("document", "document"),
+        ("animation", "animation"), ("audio", "audio"), ("voice", "voice"),
+        ("video_note", "video_note"), ("sticker", "sticker")
+    )
+    for field, kind in media_fields:
+        value = getattr(message, field, None)
+        if value:
+            if field == "photo":
+                return kind, value[-1].file_id
+            return kind, value.file_id
+    return None, None
+
+
+def business_message_content(message: Message) -> str:
+    """Keep a readable snapshot of non-text Telegram message payloads where available."""
+    if message.text:
+        return message.text
+    if message.caption:
+        return message.caption
+    if message.location:
+        return f"Местоположение: {message.location.latitude}, {message.location.longitude}"
+    if message.venue:
+        venue = message.venue
+        return f"Место: {venue.title}\nАдрес: {venue.address}\nКоординаты: {venue.location.latitude}, {venue.location.longitude}"
+    if message.contact:
+        contact = message.contact
+        name = " ".join(x for x in [contact.first_name, contact.last_name] if x)
+        return f"Контакт: {name}\nНомер телефона не сохраняется"
+    if message.poll:
+        poll = message.poll
+        options = "\n".join(f"• {option.text}" for option in poll.options)
+        return f"Опрос: {poll.question}\n{options}"
+    if message.dice:
+        return f"Эмодзи-кубик: {message.dice.emoji}, результат: {message.dice.value}"
+    if message.game:
+        return f"Игра: {message.game.title}\n{message.game.description or ''}".strip()
+    if message.invoice:
+        invoice = message.invoice
+        return f"Счёт: {invoice.title}\n{invoice.description}\nСумма: {invoice.total_amount} {invoice.currency}"
+    if message.web_app_data:
+        return f"Данные Web App: {message.web_app_data.data[:1500]}"
+    return ""
+
+
+def business_sender_label(message: Message) -> str:
+    sender = message.from_user
+    if sender:
+        name = " ".join(x for x in [sender.first_name, sender.last_name] if x)
+        return (name or ("@" + sender.username if sender.username else str(sender.id)))[:160]
+    if message.sender_chat:
+        return (message.sender_chat.title or message.sender_chat.username or str(message.sender_chat.id))[:160]
+    return "Неизвестный отправитель"
+
+
+async def handle_business_connection(connection):
+    owner_id = int(connection.user.id)
+    rights = connection.rights.model_dump(exclude_none=True) if connection.rights else {}
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT INTO plus_business_connections(connection_id,owner_tg_id,user_chat_id,is_enabled,rights_json,connected_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET "
+            "owner_tg_id=excluded.owner_tg_id,user_chat_id=excluded.user_chat_id,is_enabled=excluded.is_enabled,"
+            "rights_json=excluded.rights_json,updated_at=excluded.updated_at",
+            (connection.id, owner_id, connection.user_chat_id, int(connection.is_enabled),
+             json.dumps(rights, ensure_ascii=False), now_iso(), now_iso())
+        )
+        if not connection.is_enabled:
+            conn.execute("DELETE FROM plus_business_messages WHERE connection_id=?", (connection.id,))
+    if connection.is_enabled:
+        sub = plus_subscription_for(owner_id)
+        note = ("Подключение Telegram Business активно. LINKCHECK PLUS готов отслеживать доставленные боту события."
+                if sub and sub["active"] else
+                "Telegram Business подключён. Для начала мониторинга активируйте LINKCHECK PLUS в Mini App.")
+        try:
+            await bot.send_message(connection.user_chat_id, note)
+        except Exception:
+            logging.exception("Не удалось отправить уведомление о Business connection владельцу %s", owner_id)
+
+
+async def handle_business_message(message: Message):
+    connection_id = message.business_connection_id
+    if not connection_id:
+        return
+    with db_connect() as conn:
+        connection = conn.execute(
+            "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+            (connection_id,)
+        ).fetchone()
+    if not connection:
+        return
+    sub = plus_subscription_for(int(connection["owner_tg_id"]))
+    if not sub or not sub["active"]:
+        return
+    media_type, media_file_id = business_media(message)
+    chat_title = message.chat.title or message.chat.username or str(message.chat.id)
+    content = business_message_content(message)
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,text_content,caption,media_type,media_file_id,is_outgoing,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
+            "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
+            "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
+            "media_file_id=excluded.media_file_id,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
+            (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
+             message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
+             content, message.caption or "", media_type, media_file_id, int(bool(message.out)), now_iso())
+        )
+        conn.execute(
+            "DELETE FROM plus_business_messages WHERE updated_at < ?",
+            ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
+        )
+
+
+async def send_business_snapshot(owner_chat_id: int, record, heading: str):
+    chat = html.escape(str(record["chat_title"] or record["chat_id"]))
+    sender = html.escape(str(record["sender_label"] or "Неизвестно"))
+    body = str(record["text_content"] or record["caption"] or "").strip()
+    safe_body = html.escape(body[:3500]) if body else "<i>Текст отсутствует</i>"
+    caption = f"<b>{heading}</b>\nЧат: {chat}\nОтправитель: {sender}\n\n{safe_body}"
+    media_type, file_id = record["media_type"], record["media_file_id"]
+    try:
+        if file_id and media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
+            method = getattr(bot, f"send_{media_type}")
+            await method(owner_chat_id, file_id, caption=caption[:1024])
+        elif file_id and media_type == "video_note":
+            await bot.send_message(owner_chat_id, caption)
+            await bot.send_video_note(owner_chat_id, file_id)
+        elif file_id and media_type == "sticker":
+            await bot.send_message(owner_chat_id, caption)
+            await bot.send_sticker(owner_chat_id, file_id)
+        else:
+            await bot.send_message(owner_chat_id, caption)
+    except Exception:
+        logging.exception("Не удалось переслать сохранённое Business-сообщение")
+        await bot.send_message(owner_chat_id, caption)
+
+
+async def handle_edited_business_message(message: Message):
+    connection_id = message.business_connection_id
+    if not connection_id:
+        return
+    with db_connect() as conn:
+        old = conn.execute(
+            "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+            (connection_id, message.chat.id, message.message_id)
+        ).fetchone()
+        connection = conn.execute(
+            "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+            (connection_id,)
+        ).fetchone()
+    if not old or not connection:
+        return
+    sub = plus_subscription_for(int(connection["owner_tg_id"]))
+    if not sub or not sub["active"]:
+        return
+    await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
+    await handle_business_message(message)
+    with db_connect() as conn:
+        updated = conn.execute(
+            "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+            (connection_id, message.chat.id, message.message_id)
+        ).fetchone()
+    if updated:
+        await send_business_snapshot(connection["user_chat_id"], updated, "Новая версия сообщения")
+
+
+async def handle_deleted_business_messages(event):
+    with db_connect() as conn:
+        connection = conn.execute(
+            "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+            (event.business_connection_id,)
+        ).fetchone()
+        if not connection:
+            return
+        sub = plus_subscription_for(int(connection["owner_tg_id"]))
+        if not sub or not sub["active"]:
+            return
+        rows = []
+        for message_id in event.message_ids:
+            row = conn.execute(
+                "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                (event.business_connection_id, event.chat.id, message_id)
+            ).fetchone()
+            if row:
+                rows.append(dict(row))
+                conn.execute(
+                    "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                    (event.business_connection_id, event.chat.id, message_id)
+                )
+    if not rows:
+        return
+    for record in rows:
+        await send_business_snapshot(connection["user_chat_id"], record, "Сообщение удалено")
+
+
+async def plus_retention_cleanup_loop():
+    while True:
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat()
+            with db_connect() as conn:
+                deleted = conn.execute(
+                    "DELETE FROM plus_business_messages WHERE updated_at < ?", (cutoff,)
+                ).rowcount
+            if deleted:
+                logging.info("LINKCHECK PLUS retention cleanup: deleted %s expired message records", deleted)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("LINKCHECK PLUS retention cleanup failed")
+        await asyncio.sleep(3600)
+
+
+# Register Telegram update handlers. Polling below explicitly requests their update types.
+dp.pre_checkout_query.register(handle_plus_pre_checkout)
+dp.message.register(handle_plus_successful_payment, F.successful_payment)
+dp.business_connection.register(handle_business_connection)
+dp.business_message.register(handle_business_message)
+dp.edited_business_message.register(handle_edited_business_message)
+dp.deleted_business_messages.register(handle_deleted_business_messages)
+
+# ============================================================
 # WEB SERVER
 # ============================================================
 
@@ -4845,6 +5333,7 @@ API_RATE_LIMITS = {
     ("POST", "/api/watchlist"): (60, 60),
     ("POST", "/api/notifications/read"): (30, 60),
     ("POST", "/api/project/view"): (120, 60),
+    ("POST", "/api/plus/invoice"): (5, 3600),
 }
 API_RATE_LIMIT_DEFAULT = (120, 60)
 API_RATE_LIMIT_HITS = {}
@@ -4981,6 +5470,8 @@ async def start_web_server():
     app.router.add_get("/api/founder/gift", api_founder_gift)
     app.router.add_get("/api/stats", api_stats)
     app.router.add_get("/api/me", api_me)
+    app.router.add_get("/api/plus/status", api_plus_status)
+    app.router.add_post("/api/plus/invoice", api_plus_invoice)
     app.router.add_post("/api/request_access", api_request_access)
     app.router.add_post("/api/check", api_check)
     app.router.add_get("/api/check/history", api_check_history)
@@ -5076,16 +5567,19 @@ async def main():
     await seed_public_catalog()
     runner = await start_web_server()
     watchlist_task = asyncio.create_task(watchlist_monitor_loop(), name="linkcheck-watchlist-monitor")
+    plus_cleanup_task = asyncio.create_task(plus_retention_cleanup_loop(), name="linkcheck-plus-retention-cleanup")
     logging.info("Автоматическая массовая MTProto-проверка стартовых проектов отключена.")
     try:
         logging.info("Запуск LINKCHECK...")
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         watchlist_task.cancel()
-        try:
-            await watchlist_task
-        except asyncio.CancelledError:
-            pass
+        plus_cleanup_task.cancel()
+        for task in (watchlist_task, plus_cleanup_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await runner.cleanup()
         if tg_client is not None:
             await tg_client.disconnect()

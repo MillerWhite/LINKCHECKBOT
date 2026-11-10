@@ -32,3 +32,24 @@ LINKCHECK PLUS — Founder profile sync & owner analytics fix
 
 ИСТОЧНИК
 Правки внесены в полную локальную LINKCHECK PLUS сборку, с которой продолжалась предыдущая работа. Поведение дефектных участков сверено с публичной веткой GitHub 10.11.2026, но весь локальный проект побайтно не подтверждён как checkout текущего GitHub commit. Архив не меняет репозиторий автоматически.
+
+
+LINKCHECK PLUS (Telegram Stars + Telegram Business)
+==================================================
+The PLUS module uses the existing BOT_TOKEN and SQLite database. No payment-provider token is required for Stars.
+
+Configured plans (one-time payment; manual renewal):
+- 1 month: 200 Telegram Stars (30 days)
+- 6 months: 1,000 Telegram Stars (180 days)
+- 1 year: 1,800 Telegram Stars (365 days)
+
+The Mini App creates an XTR invoice link and opens it with Telegram.WebApp.openInvoice. The backend validates pre_checkout_query and activates the subscription only after a successful_payment update from Telegram. Do not manually activate subscriptions based on screenshots or client callbacks.
+
+Before end users can connect the bot, enable Business Mode / Secretary Mode for @linkcheck_verify_bot in @BotFather: /mybots > select the bot > Bot Settings > Business Mode (the label may appear as Secretary Mode). Then the account owner can connect @linkcheck_verify_bot in Telegram Settings > Telegram Business > Chatbots and choose the chats/permissions. Telegram's current Connected Business Bots documentation says connecting a business bot does not itself require Telegram Premium; the Telegram Business settings available on an account depend on Telegram's current account rules. The bot only stores message updates Telegram actually delivers while PLUS is active. Saved content is retained for up to 30 days and deleted when the Business connection is disabled. The owner receives edit/delete notices in the bot's private chat; the Mini App does not expose a message archive.
+
+Important: 6- and 12-month plans are one-time invoices, not recurring Stars subscriptions. The owner must renew manually. Confirm that Fragment withdrawal verification is available to the bot owner before accepting public paid subscriptions.
+
+
+Payment safety switch
+---------------------
+PLUS_PAYMENTS_ENABLED defaults to false. Keep it false while Fragment identity verification / withdrawal eligibility is unresolved. Only set PLUS_PAYMENTS_ENABLED=true in the Bothost environment after the account owner has confirmed that Fragment allows withdrawal for this bot owner. The Mini App then enables the plan purchase buttons. This switch prevents customers from paying while the owner cannot yet confirm access to withdrawal.

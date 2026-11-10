@@ -26,3 +26,19 @@ FRONTEND miniapp.html
 - AST isolated test: download founder avatar + atomic cache + TTL — PASS.
 - SQLite test: один viewer на проект в UTC-день, owner self-view excluded — PASS.
 - Live Telegram API / live Bothost deployment — не выполнялись (нет пользовательской Telethon session и доступа к хостингу).
+
+
+LINKCHECK PLUS — Stars + Telegram Business module (10.11.2026)
+- Added one-time Telegram Stars invoices (XTR) for 1/6/12 month plans: 200 / 1,000 / 1,800 Stars.
+- Added server-side invoice intent validation, pre-checkout validation, successful-payment verification and idempotent payment records.
+- Subscription duration: 30 / 180 / 365 days. Renewals extend from the later of current expiry or payment time; no recurring auto-charge is configured.
+- Added Mini App subscription status, expiry date, payment history, plan purchase via Telegram.WebApp.openInvoice, and Telegram Business connection instructions.
+- Added Telegram Business connection, message, edited-message and deleted-message update handlers. Only messages actually delivered to the bot while a PLUS subscription is active are saved.
+- Edited messages notify the owner with the stored previous version and the newly delivered version. Deleted-message updates retrieve saved records and notify the owner in the bot's private chat.
+- Business message content retention is capped at 30 days and is deleted when the corresponding Business connection is disabled.
+- No message archive is exposed in the Mini App. Telegram delivery limitations for disappearing/unsupported content are disclosed; no bypass or recovery of undelivered content is attempted.
+- Added privacy policy disclosures for Stars transactions and Telegram Business message processing.
+- No GitHub or Bothost changes were made. Live Telegram payment and Business-account tests require deployment and an actual Telegram account.
+- Added PLUS_PAYMENTS_ENABLED safety switch (defaults to false) so invoices cannot be sold before Fragment withdrawal eligibility is confirmed.
+- Added hourly retention cleanup for Business message records older than 30 days.
+- Deployment instructions now include enabling Business/Secretary Mode in @BotFather before users connect the bot.
