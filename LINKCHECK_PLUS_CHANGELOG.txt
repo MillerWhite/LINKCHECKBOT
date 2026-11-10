@@ -68,3 +68,21 @@ BACKEND main.py
 - JavaScript syntax check — PASS.
 - Интеграционный запуск backend/SQLite в этой среде не выполнен: отсутствует установленная библиотека aiogram.
 - Live Telegram Stars checkout, Telegram Business events и хостинг не проверялись из этой среды.
+
+
+LINKCHECK PLUS — Business event and media recovery hardening
+10.11.2026
+
+BACKEND main.py
+- Polling now explicitly requests `business_connection`, `business_message`, `edited_business_message`, and `deleted_business_messages` in `allowed_updates`, in addition to the updates registered by the dispatcher.
+- Added detailed logs for received, skipped, unknown-connection, edited, and deleted Business events so Bothost logs can distinguish a Telegram delivery problem from a storage/handler problem.
+- Added migration for `media_path` in `plus_business_messages`; existing SQLite databases are upgraded in place without deleting subscriptions or payment history.
+- For media actually delivered in a Business message, LINKCHECK now attempts an immediate Bot API download and stores a local copy under `DATA_DIR/plus_media` (up to the Bot API download limit). Delete/edit alerts prefer the stored copy, not only the Telegram `file_id`.
+- Edited-message handling sends the saved old snapshot, stores the new version, then sends the new snapshot. If the old snapshot is missing, the owner receives an explicit diagnostic instead of silence.
+- Deleted-message handling restores saved text/media and explicitly reports message IDs whose original content was not stored; it no longer silently ignores missing snapshots.
+- Downloaded media is removed when its message record is deleted, after a Business connection is disabled, or when the 30-day retention period expires.
+
+LIMITATIONS
+- Telegram's deletion update contains message IDs, not deleted content. Restoration depends on the original Business message having been delivered and saved before deletion.
+- View-once/self-destructing media or protected/unsupported content that Telegram does not deliver to the bot cannot be captured or recovered. No Telegram privacy restriction is bypassed.
+- Live Telegram/Bothost verification still requires deployment and a real connected Business account.

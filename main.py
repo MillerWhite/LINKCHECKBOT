@@ -37,7 +37,8 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     LabeledPrice,
-    PreCheckoutQuery
+    PreCheckoutQuery,
+    FSInputFile
 )
 
 from dotenv import load_dotenv
@@ -1236,11 +1237,13 @@ def init_db():
                 caption TEXT,
                 media_type TEXT,
                 media_file_id TEXT,
+                media_path TEXT,
                 is_outgoing INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY(connection_id, chat_id, message_id)
             )
         """)
+        ensure_column(conn, "plus_business_messages", "media_path", "TEXT")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
             "ON plus_business_messages(owner_tg_id, updated_at DESC)"
@@ -5168,6 +5171,34 @@ def business_media(message: Message):
     return None, None
 
 
+async def persist_business_media(message: Message, file_id: str | None) -> str | None:
+    """Download media actually delivered in a Business update so temporary content is not lost immediately."""
+    if not file_id:
+        return None
+    media_dir = os.path.join(DATA_DIR, "plus_media")
+    os.makedirs(media_dir, exist_ok=True)
+    connection_part = re.sub(r"[^A-Za-z0-9_-]", "_", str(message.business_connection_id or "connection"))[:40]
+    filename = f"{connection_part}_{int(message.chat.id)}_{int(message.message_id)}"
+    path = os.path.join(media_dir, filename)
+    try:
+        downloaded = await bot.download(file_id, destination=path)
+        if downloaded is None and not os.path.isfile(path):
+            return None
+        if os.path.isfile(path) and os.path.getsize(path) > 20 * 1024 * 1024:
+            os.remove(path)
+            logging.warning("LINKCHECK PLUS: media %s exceeds 20 MB download retention limit", message.message_id)
+            return None
+        return path if os.path.isfile(path) else None
+    except Exception:
+        logging.exception("LINKCHECK PLUS: could not persist Business media message_id=%s", message.message_id)
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
+        return None
+
+
 def business_message_content(message: Message) -> str:
     """Keep a readable snapshot of non-text Telegram message payloads where available."""
     if message.text:
@@ -5212,6 +5243,7 @@ def business_sender_label(message: Message) -> str:
 async def handle_business_connection(connection):
     owner_id = int(connection.user.id)
     rights = connection.rights.model_dump(exclude_none=True) if connection.rights else {}
+    removed_media_paths = []
     with db_connect() as conn:
         conn.execute(
             "INSERT INTO plus_business_connections(connection_id,owner_tg_id,user_chat_id,is_enabled,rights_json,connected_at,updated_at) "
@@ -5222,7 +5254,17 @@ async def handle_business_connection(connection):
              json.dumps(rights, ensure_ascii=False), now_iso(), now_iso())
         )
         if not connection.is_enabled:
+            removed_media_paths = [row["media_path"] for row in conn.execute(
+                "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND media_path IS NOT NULL",
+                (connection.id,)
+            ).fetchall()]
             conn.execute("DELETE FROM plus_business_messages WHERE connection_id=?", (connection.id,))
+    for media_path in removed_media_paths:
+        try:
+            if media_path and os.path.isfile(media_path):
+                os.remove(media_path)
+        except OSError:
+            logging.exception("LINKCHECK PLUS: could not remove disconnected media file")
     if connection.is_enabled:
         sub = plus_subscription_for(owner_id)
         note = ("Подключение Telegram Business активно. LINKCHECK PLUS готов отслеживать доставленные боту события."
@@ -5237,6 +5279,7 @@ async def handle_business_connection(connection):
 async def handle_business_message(message: Message):
     connection_id = message.business_connection_id
     if not connection_id:
+        logging.warning("LINKCHECK PLUS: business_message arrived without business_connection_id")
         return
     with db_connect() as conn:
         connection = conn.execute(
@@ -5244,57 +5287,78 @@ async def handle_business_message(message: Message):
             (connection_id,)
         ).fetchone()
     if not connection:
+        logging.warning("LINKCHECK PLUS: business_message for unknown/disabled connection %s", connection_id)
         return
     sub = plus_subscription_for(int(connection["owner_tg_id"]))
     if not sub or not sub["active"]:
+        logging.info("LINKCHECK PLUS: skipped message because subscription is inactive owner=%s", connection["owner_tg_id"])
         return
     media_type, media_file_id = business_media(message)
+    media_path = await persist_business_media(message, media_file_id)
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
     with db_connect() as conn:
+        old = conn.execute(
+            "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+            (connection_id, message.chat.id, message.message_id)
+        ).fetchone()
         conn.execute(
-            "INSERT INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,text_content,caption,media_type,media_file_id,is_outgoing,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
+            "INSERT INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
             "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
             "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
-            "media_file_id=excluded.media_file_id,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
+            "media_file_id=excluded.media_file_id,media_path=excluded.media_path,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
-             content, message.caption or "", media_type, media_file_id, int(bool(message.out)), now_iso())
+             content, message.caption or "", media_type, media_file_id, media_path, int(bool(message.out)), now_iso())
         )
         conn.execute(
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
             ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
         )
+    if old and old["media_path"] and old["media_path"] != media_path:
+        try:
+            if os.path.isfile(old["media_path"]):
+                os.remove(old["media_path"])
+        except OSError:
+            logging.exception("LINKCHECK PLUS: could not remove replaced media snapshot")
+    logging.info(
+        "LINKCHECK PLUS: saved Business message owner=%s chat=%s message=%s outgoing=%s media=%s downloaded=%s",
+        connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
+        media_type or "none", bool(media_path)
+    )
 
 
 async def send_business_snapshot(owner_chat_id: int, record, heading: str):
     chat = html.escape(str(record["chat_title"] or record["chat_id"]))
     sender = html.escape(str(record["sender_label"] or "Неизвестно"))
     body = str(record["text_content"] or record["caption"] or "").strip()
-    safe_body = html.escape(body[:3500]) if body else "<i>Текст отсутствует</i>"
+    safe_body = html.escape(body[:3000]) if body else "<i>Текст отсутствует</i>"
     caption = f"<b>{heading}</b>\nЧат: {chat}\nОтправитель: {sender}\n\n{safe_body}"
     media_type, file_id = record["media_type"], record["media_file_id"]
+    media_path = record["media_path"] if "media_path" in record.keys() else None
     try:
-        if file_id and media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
+        source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
+        if source and media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
             method = getattr(bot, f"send_{media_type}")
-            await method(owner_chat_id, file_id, caption=caption[:1024])
-        elif file_id and media_type == "video_note":
+            await method(owner_chat_id, source, caption=caption[:1024])
+        elif source and media_type == "video_note":
             await bot.send_message(owner_chat_id, caption)
-            await bot.send_video_note(owner_chat_id, file_id)
-        elif file_id and media_type == "sticker":
+            await bot.send_video_note(owner_chat_id, source)
+        elif source and media_type == "sticker":
             await bot.send_message(owner_chat_id, caption)
-            await bot.send_sticker(owner_chat_id, file_id)
+            await bot.send_sticker(owner_chat_id, source)
         else:
             await bot.send_message(owner_chat_id, caption)
     except Exception:
         logging.exception("Не удалось переслать сохранённое Business-сообщение")
-        await bot.send_message(owner_chat_id, caption)
+        await bot.send_message(owner_chat_id, caption + "\n\n<i>Медиафайл восстановить не удалось.</i>")
 
 
 async def handle_edited_business_message(message: Message):
     connection_id = message.business_connection_id
     if not connection_id:
+        logging.warning("LINKCHECK PLUS: edited_business_message without connection id")
         return
     with db_connect() as conn:
         old = conn.execute(
@@ -5305,12 +5369,23 @@ async def handle_edited_business_message(message: Message):
             "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
             (connection_id,)
         ).fetchone()
-    if not old or not connection:
+    if not connection:
+        logging.warning("LINKCHECK PLUS: edit received for unknown/disabled connection %s", connection_id)
         return
     sub = plus_subscription_for(int(connection["owner_tg_id"]))
     if not sub or not sub["active"]:
         return
-    await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
+    if old:
+        await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
+    else:
+        logging.warning("LINKCHECK PLUS: edited message has no saved original owner=%s chat=%s message=%s", connection["owner_tg_id"], message.chat.id, message.message_id)
+        await bot.send_message(
+            connection["user_chat_id"],
+            "<b>LINKCHECK PLUS: обнаружено изменение сообщения</b>\n"
+            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\n"
+            "Исходная версия не найдена в локальном хранилище, поэтому показать её не удалось. "
+            "Текущую версию сохраню для последующих событий."
+        )
     await handle_business_message(message)
     with db_connect() as conn:
         updated = conn.execute(
@@ -5328,11 +5403,12 @@ async def handle_deleted_business_messages(event):
             (event.business_connection_id,)
         ).fetchone()
         if not connection:
+            logging.warning("LINKCHECK PLUS: delete update for unknown/disabled connection %s", event.business_connection_id)
             return
         sub = plus_subscription_for(int(connection["owner_tg_id"]))
         if not sub or not sub["active"]:
             return
-        rows = []
+        rows, missing = [], []
         for message_id in event.message_ids:
             row = conn.execute(
                 "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -5344,10 +5420,30 @@ async def handle_deleted_business_messages(event):
                     "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
                     (event.business_connection_id, event.chat.id, message_id)
                 )
-    if not rows:
-        return
+            else:
+                missing.append(int(message_id))
+    logging.info(
+        "LINKCHECK PLUS: deleted_business_messages owner=%s chat=%s ids=%s restored=%s missing=%s",
+        connection["owner_tg_id"], event.chat.id, list(event.message_ids), len(rows), len(missing)
+    )
     for record in rows:
         await send_business_snapshot(connection["user_chat_id"], record, "Сообщение удалено")
+        media_path = record.get("media_path")
+        if media_path:
+            try:
+                if os.path.isfile(media_path):
+                    os.remove(media_path)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not remove deleted-message media snapshot")
+    if missing:
+        await bot.send_message(
+            connection["user_chat_id"],
+            "<b>LINKCHECK PLUS: Telegram сообщил об удалении сообщения, но его копии нет в хранилище</b>\n"
+            f"Чат: {html.escape(event.chat.title or event.chat.username or str(event.chat.id))}\n"
+            f"ID сообщений: {', '.join(map(str, missing))}\n\n"
+            "Это означает, что исходное сообщение не было сохранено до удаления (например, бот не получил событие нового сообщения, "
+            "подписка тогда не была активна или Telegram не передал содержимое). LINKCHECK не может запросить удалённый текст у Telegram задним числом."
+        )
 
 
 async def plus_retention_cleanup_loop():
@@ -5358,6 +5454,16 @@ async def plus_retention_cleanup_loop():
                 deleted = conn.execute(
                     "DELETE FROM plus_business_messages WHERE updated_at < ?", (cutoff,)
                 ).rowcount
+            media_dir = os.path.join(DATA_DIR, "plus_media")
+            if os.path.isdir(media_dir):
+                cutoff_ts = time.time() - PLUS_MESSAGE_RETENTION_DAYS * 86400
+                for filename in os.listdir(media_dir):
+                    media_path = os.path.join(media_dir, filename)
+                    try:
+                        if os.path.isfile(media_path) and os.path.getmtime(media_path) < cutoff_ts:
+                            os.remove(media_path)
+                    except OSError:
+                        logging.exception("LINKCHECK PLUS: retention cleanup failed for media file %s", media_path)
             if deleted:
                 logging.info("LINKCHECK PLUS retention cleanup: deleted %s expired message records", deleted)
         except asyncio.CancelledError:
@@ -5645,7 +5751,14 @@ async def main():
     logging.info("Автоматическая массовая MTProto-проверка стартовых проектов отключена.")
     try:
         logging.info("Запуск LINKCHECK...")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        allowed_updates = set(dp.resolve_used_update_types())
+        allowed_updates.update({
+            "message", "callback_query", "pre_checkout_query",
+            "business_connection", "business_message",
+            "edited_business_message", "deleted_business_messages"
+        })
+        logging.info("Telegram polling allowed_updates=%s", sorted(allowed_updates))
+        await dp.start_polling(bot, allowed_updates=sorted(allowed_updates))
     finally:
         watchlist_task.cancel()
         plus_cleanup_task.cancel()
