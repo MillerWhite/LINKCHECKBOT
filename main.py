@@ -5930,6 +5930,100 @@ async def handle_deleted_business_messages(event):
         )
 
 
+async def persist_mtproto_business_media(message, connection_id: str, chat_id: int, message_id: int):
+    """Download a backup attachment after its text snapshot has been committed."""
+    try:
+        media_dir = os.path.join(DATA_DIR, "plus_media")
+        os.makedirs(media_dir, exist_ok=True)
+        connection_part = re.sub(r"[^A-Za-z0-9_-]", "_", str(connection_id))[:40]
+        path = os.path.join(media_dir, f"mtproto_{connection_part}_{int(chat_id)}_{int(message_id)}")
+        downloaded_path = await message.download_media(file=path)
+        if not downloaded_path or not os.path.isfile(downloaded_path):
+            return
+        if os.path.getsize(downloaded_path) > 20 * 1024 * 1024:
+            os.remove(downloaded_path)
+            logging.warning("LINKCHECK PLUS MTProto backup media exceeds 20 MB chat=%s message=%s", chat_id, message_id)
+            return
+        with db_connect() as conn:
+            conn.execute("UPDATE plus_business_messages SET media_path=?,updated_at=? WHERE connection_id=? AND chat_id=? AND message_id=? AND media_path IS NULL",
+                         (downloaded_path, now_iso(), connection_id, chat_id, message_id))
+    except Exception:
+        logging.exception("LINKCHECK PLUS MTProto media backup failed connection=%s chat=%s message=%s", connection_id, chat_id, message_id)
+
+
+def telethon_business_media_type(message):
+    """Map Telethon media objects to the media names used by LINKCHECK snapshots."""
+    for attribute, media_type in (("photo", "photo"), ("video", "video"), ("gif", "animation"),
+                                  ("voice", "voice"), ("audio", "audio"), ("sticker", "sticker"),
+                                  ("document", "document")):
+        try:
+            if getattr(message, attribute, None):
+                return media_type
+        except Exception:
+            pass
+    return None
+
+
+async def register_plus_mtproto_message_capture(owner_tg_id: int):
+    """Add a second snapshot source for the logged-in Business owner only.
+
+    It is deliberately restricted to private chats already observed by a
+    real Business Bot API update. The Bot API remains authoritative for
+    edit/delete notifications; this listener only fills missing originals.
+    """
+    if tg_client is None or events is None:
+        logging.info("LINKCHECK PLUS MTProto backup unavailable: Telethon events are not installed")
+        return
+    with db_connect() as conn:
+        known_connections = conn.execute("SELECT connection_id FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1",
+                                          (int(owner_tg_id),)).fetchall()
+    if not known_connections:
+        logging.info("LINKCHECK PLUS MTProto backup not attached: Telethon account id=%s is not an enabled Business owner", owner_tg_id)
+        return
+
+    @tg_client.on(events.NewMessage())
+    async def capture_known_business_message(event):
+        try:
+            if not event.is_private or not event.chat_id or not event.message:
+                return
+            with db_connect() as conn:
+                connections = conn.execute("SELECT c.connection_id,c.owner_tg_id FROM plus_business_connections c JOIN plus_business_chats ch ON ch.connection_id=c.connection_id WHERE c.owner_tg_id=? AND c.is_enabled=1 AND ch.chat_id=?",
+                                            (int(owner_tg_id), int(event.chat_id))).fetchall()
+            if not connections:
+                return
+            message = event.message
+            content = str(getattr(message, "message", "") or "")
+            media_type = telethon_business_media_type(message)
+            entity = getattr(event, 'chat', None)
+            if entity is not None:
+                chat_title = (getattr(entity, 'title', None) or ' '.join(x for x in (getattr(entity, 'first_name', None), getattr(entity, 'last_name', None)) if x) or getattr(entity, 'username', None) or str(event.chat_id))
+            else:
+                chat_title = str(event.chat_id)
+            sender_label = 'Вы' if bool(getattr(message, 'out', False)) else chat_title
+            message_date = getattr(message, 'date', None)
+            message_date_text = message_date.isoformat() if message_date else now_iso()
+            for connection in connections:
+                owner_id = int(connection['owner_tg_id'])
+                sub = plus_subscription_for(owner_id)
+                if not sub or not sub['active']:
+                    continue
+                connection_id = str(connection['connection_id'])
+                with db_connect() as conn:
+                    conn.execute("INSERT OR IGNORE INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                 (connection_id, owner_id, int(event.chat_id), int(message.id), message_date_text, str(chat_title)[:256], str(sender_label)[:160], content, content if media_type else '', media_type, None, None, int(bool(getattr(message, 'out', False))), now_iso()))
+                    saved = conn.execute("SELECT media_path FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                                         (connection_id, int(event.chat_id), int(message.id))).fetchone()
+                if saved and media_type and not saved['media_path']:
+                    task = asyncio.create_task(persist_mtproto_business_media(message, connection_id, int(event.chat_id), int(message.id)))
+                    BUSINESS_MEDIA_TASKS.add(task)
+                    task.add_done_callback(BUSINESS_MEDIA_TASKS.discard)
+            logging.info("LINKCHECK PLUS MTProto backup snapshot owner=%s chat=%s message=%s media=%s text_length=%s",
+                         owner_tg_id, event.chat_id, message.id, media_type or 'none', len(content))
+        except Exception:
+            logging.exception("LINKCHECK PLUS MTProto backup handler failed owner=%s", owner_tg_id)
+
+    logging.info("LINKCHECK PLUS MTProto backup listener enabled owner=%s known_business_connections=%s", owner_tg_id, len(known_connections))
+
 async def plus_retention_cleanup_loop():
     while True:
         try:
@@ -6238,6 +6332,7 @@ async def start_telegram_checker():
         me = await tg_client.get_me()
         logging.info("LINKCHECK Telethon session identity: id=%s username=%s",
                      getattr(me, "id", None), getattr(me, "username", None))
+        await register_plus_mtproto_message_capture(int(me.id))
         logging.info("Резервная проверка через MTProto подключена; основной способ проверки публичных username — страница t.me.")
     except Exception as exc:
         tg_start_error = f"{type(exc).__name__}: {exc}"
