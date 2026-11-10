@@ -6272,7 +6272,12 @@ async def main():
             "edited_business_message", "deleted_business_messages"
         })
         logging.info("Telegram polling allowed_updates=%s", sorted(allowed_updates))
-        await dp.start_polling(bot, allowed_updates=sorted(allowed_updates))
+        logging.info("LINKCHECK polling update processing mode=sequential (handle_as_tasks=False)")
+        await dp.start_polling(
+            bot,
+            allowed_updates=sorted(allowed_updates),
+            handle_as_tasks=False
+        )
     finally:
         watchlist_task.cancel()
         plus_cleanup_task.cancel()
