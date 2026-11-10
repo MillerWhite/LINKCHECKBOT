@@ -5539,7 +5539,7 @@ def business_media(message: Message):
 
 
 async def persist_business_media_snapshot(message: Message, connection_id: str, file_id: str | None, old_media_path: str | None):
-    """Persist media in the background; the text snapshot is already committed before this runs."""
+    """Persist the original Business media before the ordered update handler returns."""
     try:
         media_path = await asyncio.wait_for(persist_business_media(message, file_id), timeout=30)
         if media_path:
@@ -5842,7 +5842,11 @@ async def cache_mtproto_message_snapshot(event):
         )
         content = str(getattr(message, "message", None) or getattr(message, "text", None) or "")
         media_type = None
-        if getattr(message, "photo", None):
+        document = getattr(message, "document", None)
+        document_attributes = getattr(document, "attributes", []) if document else []
+        if any(bool(getattr(attribute, "round_message", False)) for attribute in document_attributes):
+            media_type = "video_note"
+        elif getattr(message, "photo", None):
             media_type = "photo"
         elif getattr(message, "video", None):
             media_type = "video"
@@ -5854,12 +5858,12 @@ async def cache_mtproto_message_snapshot(event):
             media_type = "audio"
         elif getattr(message, "sticker", None):
             media_type = "sticker"
-        elif getattr(message, "document", None):
+        elif document:
             media_type = "document"
         if not content and media_type:
             content = {
-                "photo":"[Фото]", "video":"[Видео]", "animation":"[GIF]",
-                "voice":"[Голосовое сообщение]", "audio":"[Аудио]",
+                "photo":"[Фото]", "video":"[Видео]", "video_note":"[Видеосообщение-кружок]",
+                "animation":"[GIF]", "voice":"[Голосовое сообщение]", "audio":"[Аудио]",
                 "sticker":"[Стикер]", "document":"[Файл]"
             }.get(media_type, "[Медиа]")
 
