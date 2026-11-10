@@ -1279,6 +1279,15 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_plus_business_chats_owner "
             "ON plus_business_chats(owner_tg_id, chat_id)"
         )
+        # Recover the known-chat allowlist from snapshots written by earlier versions.
+        conn.execute("""
+            INSERT OR IGNORE INTO plus_business_chats(
+                connection_id,owner_tg_id,chat_id,chat_title,first_seen_at,updated_at
+            )
+            SELECT connection_id,owner_tg_id,chat_id,MAX(chat_title),MIN(updated_at),MAX(updated_at)
+            FROM plus_business_messages
+            GROUP BY connection_id,owner_tg_id,chat_id
+        """)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
             "ON plus_business_messages(owner_tg_id, updated_at DESC)"
