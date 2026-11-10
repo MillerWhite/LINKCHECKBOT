@@ -5541,7 +5541,7 @@ def business_media(message: Message):
 async def persist_business_media_snapshot(message: Message, connection_id: str, file_id: str | None, old_media_path: str | None):
     """Persist media in the background; the text snapshot is already committed before this runs."""
     try:
-        media_path = await persist_business_media(message, file_id)
+        media_path = await asyncio.wait_for(persist_business_media(message, file_id), timeout=30)
         if media_path:
             with db_connect() as conn:
                 conn.execute(
@@ -5966,7 +5966,7 @@ async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id
     if not snapshot:
         return None
     # The metadata is visible immediately; allow the in-flight temporary-media
-    # download a short window to finish before promoting the snapshot.
+    # download up to 25 seconds to finish before promoting the snapshot.
     for _ in range(250):
         if not snapshot.get("media_capture_pending"):
             break
