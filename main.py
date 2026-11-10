@@ -5242,10 +5242,9 @@ async def api_plus_status(request):
                                 "rights": {}, "rights_verified": True}
             selected_source = "mtproto"
 
-    business_payload["missing_rights"] = (
-        [right for right in required_rights if not bool(business_payload.get("rights", {}).get(right, False))]
-        if business_payload.get("connected") and business_payload.get("rights_verified") else []
-    )
+    # Connection state is independent from the optional Business rights snapshot.
+    # Missing/partial rights must never downgrade an enabled Telegram connection.
+    business_payload["missing_rights"] = []
     logging.info(
         "LINKCHECK PLUS STATUS: owner=%s db=%s subscription_active=%s connection_record=%s bot_api_enabled=%s bot_api_rights_verified=%s bot_api_missing=%s mtproto=%s mtproto_missing=%s selected=%s final_connected=%s final_missing=%s",
         owner_id, os.path.abspath(DB_PATH), bool(sub and sub.get("active")), known_connection,
