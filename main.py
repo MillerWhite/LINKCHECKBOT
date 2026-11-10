@@ -5526,6 +5526,28 @@ def business_media(message: Message):
     return None, None
 
 
+async def persist_business_media_snapshot(message: Message, connection_id: str, file_id: str | None, old_media_path: str | None):
+    """Persist media in the background; the text snapshot is already committed before this runs."""
+    try:
+        media_path = await persist_business_media(message, file_id)
+        if media_path:
+            with db_connect() as conn:
+                conn.execute(
+                    "UPDATE plus_business_messages SET media_path=?, updated_at=? "
+                    "WHERE connection_id=? AND chat_id=? AND message_id=?",
+                    (media_path, now_iso(), connection_id, message.chat.id, message.message_id)
+                )
+        if old_media_path and old_media_path != media_path:
+            try:
+                if os.path.isfile(old_media_path):
+                    os.remove(old_media_path)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not remove replaced media snapshot")
+    except Exception:
+        logging.exception("LINKCHECK PLUS: background media snapshot failed connection=%s chat=%s message=%s",
+                          connection_id, message.chat.id, message.message_id)
+
+
 async def persist_business_media(message: Message, file_id: str | None) -> str | None:
     """Download media actually delivered in a Business update so temporary content is not lost immediately."""
     if not file_id:
@@ -5732,24 +5754,19 @@ async def handle_business_message(message: Message):
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
             ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
         )
-    media_path = await persist_business_media(message, media_file_id)
-    if media_path:
-        with db_connect() as conn:
-            conn.execute(
-                "UPDATE plus_business_messages SET media_path=?, updated_at=? "
-                "WHERE connection_id=? AND chat_id=? AND message_id=?",
-                (media_path, now_iso(), connection_id, message.chat.id, message.message_id)
-            )
-    if old and old["media_path"] and old["media_path"] != media_path:
-        try:
-            if os.path.isfile(old["media_path"]):
-                os.remove(old["media_path"])
-        except OSError:
-            logging.exception("LINKCHECK PLUS: could not remove replaced media snapshot")
+    # The searchable snapshot is committed above before yielding control.
+    # Downloading attachments must not block a following edit/delete update.
+    media_task = asyncio.create_task(
+        persist_business_media_snapshot(
+            message, connection_id, media_file_id, old["media_path"] if old else None
+        )
+    )
+    BUSINESS_MEDIA_TASKS.add(media_task)
+    media_task.add_done_callback(BUSINESS_MEDIA_TASKS.discard)
     logging.info(
-        "LINKCHECK PLUS: saved Business message owner=%s chat=%s message=%s outgoing=%s media=%s downloaded=%s",
+        "LINKCHECK PLUS: saved Business message snapshot owner=%s chat=%s message=%s outgoing=%s media=%s text_length=%s",
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
-        media_type or "none", bool(media_path)
+        media_type or "none", len(content or "")
     )
 async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bool:
     chat = html.escape(str(record["chat_title"] or record["chat_id"]))
@@ -5940,14 +5957,40 @@ async def plus_retention_cleanup_loop():
         await asyncio.sleep(3600)
 
 
+# Business updates must be processed in arrival order. aiogram's default polling
+# starts each update in a separate task, so an immediate delete/edit could race
+# the first message's DB insert and appear to have no saved original.
+BUSINESS_UPDATE_LOCK = asyncio.Lock()
+BUSINESS_MEDIA_TASKS = set()
+
+
+async def serialized_business_connection(connection):
+    async with BUSINESS_UPDATE_LOCK:
+        await handle_business_connection(connection)
+
+
+async def serialized_business_message(message: Message):
+    async with BUSINESS_UPDATE_LOCK:
+        await handle_business_message(message)
+
+
+async def serialized_edited_business_message(message: Message):
+    async with BUSINESS_UPDATE_LOCK:
+        await handle_edited_business_message(message)
+
+
+async def serialized_deleted_business_messages(event):
+    async with BUSINESS_UPDATE_LOCK:
+        await handle_deleted_business_messages(event)
+
+
 # Register Business events through their dedicated aiogram observers.
-# aiogram 3.31+ provides current Bot API models and typed Business observers.
 dp.pre_checkout_query.register(handle_plus_pre_checkout)
 dp.message.register(handle_plus_successful_payment, F.successful_payment)
-dp.business_connection.register(handle_business_connection)
-dp.business_message.register(handle_business_message)
-dp.edited_business_message.register(handle_edited_business_message)
-dp.deleted_business_messages.register(handle_deleted_business_messages)
+dp.business_connection.register(serialized_business_connection)
+dp.business_message.register(serialized_business_message)
+dp.edited_business_message.register(serialized_edited_business_message)
+dp.deleted_business_messages.register(serialized_deleted_business_messages)
 
 # ============================================================
 # WEB SERVER
