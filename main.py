@@ -5967,7 +5967,7 @@ async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id
         return None
     # The metadata is visible immediately; allow the in-flight temporary-media
     # download a short window to finish before promoting the snapshot.
-    for _ in range(80):
+    for _ in range(250):
         if not snapshot.get("media_capture_pending"):
             break
         await asyncio.sleep(0.1)
@@ -6025,6 +6025,12 @@ async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id
                 (str(connection_id), int(chat_id), int(message_id))
             ).fetchone()
     if row:
+        if media_path and row["media_path"] != media_path:
+            try:
+                if os.path.isfile(media_path):
+                    os.remove(media_path)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not remove redundant MTProto media copy")
         logging.info(
             "LINKCHECK PLUS: recovered original Business snapshot from MTProto cache owner=%s chat=%s message=%s media=%s media_bytes=%s",
             owner_tg_id, chat_id, message_id, snapshot.get("media_type") or "none",
@@ -6061,7 +6067,7 @@ async def attach_mtproto_business_snapshot_listener(owner_tg_id: int):
         await cache_mtproto_message_snapshot(event)
     tg_client.add_event_handler(on_private_message, events.NewMessage())
     MT_PROTO_CAPTURE_HANDLER_ATTACHED = True
-    logging.info("LINKCHECK PLUS MTProto snapshot cache attached owner=%s mode=in-memory-only ttl_days=30 max_messages=20000",
+    logging.info("LINKCHECK PLUS MTProto snapshot cache attached owner=%s mode=in-memory-only ttl_days=30 max_messages=20000 media_cache_mb=100 max_media_mb=50",
                  owner_tg_id)
 
 
