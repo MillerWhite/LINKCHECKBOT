@@ -5957,40 +5957,59 @@ async def plus_retention_cleanup_loop():
         await asyncio.sleep(3600)
 
 
-# Business updates must be processed in arrival order. aiogram's default polling
-# starts each update in a separate task, so an immediate delete/edit could race
-# the first message's DB insert and appear to have no saved original.
-BUSINESS_UPDATE_LOCK = asyncio.Lock()
-BUSINESS_MEDIA_TASKS = set()
+async def business_update_middleware(handler, event: Update, data: dict):
+    """Process Telegram Business updates in one ordered dispatcher path.
+
+    This mirrors the single default-update-handler architecture used by
+    rollce/DialogSpyBot: snapshot the original Business message before the
+    next update is dispatched, then handle edit/delete against that snapshot.
+    """
+    try:
+        if event.business_connection is not None:
+            connection = event.business_connection
+            logging.info(
+                "LINKCHECK PLUS: root update dispatcher type=business_connection update_id=%s connection=%s enabled=%s",
+                event.update_id, connection.id, connection.is_enabled
+            )
+            await handle_business_connection(connection)
+        elif event.business_message is not None:
+            message = event.business_message
+            logging.info(
+                "LINKCHECK PLUS: root update dispatcher type=business_message update_id=%s connection=%s chat=%s message=%s",
+                event.update_id, message.business_connection_id, message.chat.id, message.message_id
+            )
+            await handle_business_message(message)
+        elif event.edited_business_message is not None:
+            message = event.edited_business_message
+            logging.info(
+                "LINKCHECK PLUS: root update dispatcher type=edited_business_message update_id=%s connection=%s chat=%s message=%s",
+                event.update_id, message.business_connection_id, message.chat.id, message.message_id
+            )
+            await handle_edited_business_message(message)
+        elif event.deleted_business_messages is not None:
+            deleted = event.deleted_business_messages
+            logging.info(
+                "LINKCHECK PLUS: root update dispatcher type=deleted_business_messages update_id=%s connection=%s chat=%s ids=%s",
+                event.update_id, deleted.business_connection_id, deleted.chat.id, list(deleted.message_ids)
+            )
+            await handle_deleted_business_messages(deleted)
+    except Exception:
+        logging.exception(
+            "LINKCHECK PLUS: root Business update processing failed update_id=%s",
+            getattr(event, "update_id", None)
+        )
+        raise
+
+    return await handler(event, data)
 
 
-async def serialized_business_connection(connection):
-    async with BUSINESS_UPDATE_LOCK:
-        await handle_business_connection(connection)
+# Business updates are intercepted at the root Update observer before aiogram
+# routes them to per-type observers. This gives them one deterministic path.
+dp.update.outer_middleware(business_update_middleware)
 
-
-async def serialized_business_message(message: Message):
-    async with BUSINESS_UPDATE_LOCK:
-        await handle_business_message(message)
-
-
-async def serialized_edited_business_message(message: Message):
-    async with BUSINESS_UPDATE_LOCK:
-        await handle_edited_business_message(message)
-
-
-async def serialized_deleted_business_messages(event):
-    async with BUSINESS_UPDATE_LOCK:
-        await handle_deleted_business_messages(event)
-
-
-# Register Business events through their dedicated aiogram observers.
+# Register only non-Business handlers on their normal observers.
 dp.pre_checkout_query.register(handle_plus_pre_checkout)
 dp.message.register(handle_plus_successful_payment, F.successful_payment)
-dp.business_connection.register(serialized_business_connection)
-dp.business_message.register(serialized_business_message)
-dp.edited_business_message.register(serialized_edited_business_message)
-dp.deleted_business_messages.register(serialized_deleted_business_messages)
 
 # ============================================================
 # WEB SERVER
