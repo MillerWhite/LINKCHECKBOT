@@ -5757,7 +5757,13 @@ async def handle_edited_business_message(message: Message):
     if not sub or not sub["active"]:
         return
     if old:
-        await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
+        delivered = await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
+        if not delivered:
+            logging.error(
+                "LINKCHECK PLUS: original edited-message snapshot retained; new version not written because notification failed connection=%s chat=%s message=%s",
+                connection_id, message.chat.id, message.message_id
+            )
+            return
     else:
         logging.warning("LINKCHECK PLUS: edited message has no saved original owner=%s chat=%s message=%s", connection["owner_tg_id"], message.chat.id, message.message_id)
         await bot.send_message(
