@@ -5694,7 +5694,7 @@ async def handle_business_message(message: Message):
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
         media_type or "none", bool(media_path)
     )
-async def send_business_snapshot(owner_chat_id: int, record, heading: str):
+async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bool:
     chat = html.escape(str(record["chat_title"] or record["chat_id"]))
     sender = html.escape(str(record["sender_label"] or "Неизвестно"))
     body = str(record["text_content"] or record["caption"] or "").strip()
@@ -5715,9 +5715,15 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str):
             await bot.send_sticker(owner_chat_id, source)
         else:
             await bot.send_message(owner_chat_id, caption)
+        return True
     except Exception:
         logging.exception("Не удалось переслать сохранённое Business-сообщение")
-        await bot.send_message(owner_chat_id, caption + "\n\n<i>Медиафайл восстановить не удалось.</i>")
+        try:
+            await bot.send_message(owner_chat_id, caption + "\n\n<i>Медиафайл восстановить не удалось.</i>")
+            return True
+        except Exception:
+            logging.exception("LINKCHECK PLUS: не удалось отправить даже текстовый снимок Business-сообщения")
+            return False
 
 
 async def handle_edited_business_message(message: Message):
@@ -5734,6 +5740,16 @@ async def handle_edited_business_message(message: Message):
             "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
             (connection_id,)
         ).fetchone()
+    if not connection:
+        try:
+            await refresh_business_connection(connection_id)
+        except Exception:
+            logging.exception("LINKCHECK PLUS: could not refresh connection for edited message %s", connection_id)
+        with db_connect() as conn:
+            connection = conn.execute(
+                "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+                (connection_id,)
+            ).fetchone()
     if not connection:
         logging.warning("LINKCHECK PLUS: edit received for unknown/disabled connection %s", connection_id)
         return
@@ -5767,13 +5783,25 @@ async def handle_deleted_business_messages(event):
             "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
             (event.business_connection_id,)
         ).fetchone()
-        if not connection:
-            logging.warning("LINKCHECK PLUS: delete update for unknown/disabled connection %s", event.business_connection_id)
-            return
-        sub = plus_subscription_for(int(connection["owner_tg_id"]))
-        if not sub or not sub["active"]:
-            return
-        rows, missing = [], []
+    if not connection:
+        try:
+            await refresh_business_connection(event.business_connection_id)
+        except Exception:
+            logging.exception("LINKCHECK PLUS: could not refresh connection for deleted messages %s", event.business_connection_id)
+        with db_connect() as conn:
+            connection = conn.execute(
+                "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+                (event.business_connection_id,)
+            ).fetchone()
+    if not connection:
+        logging.warning("LINKCHECK PLUS: delete update for unknown/disabled connection %s", event.business_connection_id)
+        return
+    sub = plus_subscription_for(int(connection["owner_tg_id"]))
+    if not sub or not sub["active"]:
+        logging.info("LINKCHECK PLUS: delete update ignored because subscription inactive owner=%s", connection["owner_tg_id"])
+        return
+    rows, missing = [], []
+    with db_connect() as conn:
         for message_id in event.message_ids:
             row = conn.execute(
                 "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -5781,10 +5809,6 @@ async def handle_deleted_business_messages(event):
             ).fetchone()
             if row:
                 rows.append(dict(row))
-                conn.execute(
-                    "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
-                    (event.business_connection_id, event.chat.id, message_id)
-                )
             else:
                 missing.append(int(message_id))
     logging.info(
@@ -5792,7 +5816,18 @@ async def handle_deleted_business_messages(event):
         connection["owner_tg_id"], event.chat.id, list(event.message_ids), len(rows), len(missing)
     )
     for record in rows:
-        await send_business_snapshot(connection["user_chat_id"], record, "Сообщение удалено")
+        delivered = await send_business_snapshot(connection["user_chat_id"], record, "Сообщение удалено")
+        if not delivered:
+            logging.error(
+                "LINKCHECK PLUS: deleted message snapshot retained for retry because notification failed connection=%s chat=%s message=%s",
+                event.business_connection_id, event.chat.id, record["message_id"]
+            )
+            continue
+        with db_connect() as conn:
+            conn.execute(
+                "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                (event.business_connection_id, event.chat.id, record["message_id"])
+            )
         media_path = record.get("media_path")
         if media_path:
             try:
