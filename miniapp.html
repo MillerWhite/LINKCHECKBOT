@@ -2285,21 +2285,18 @@ async function loadPlusStatusInternal(){
         if(connectionEl){
             const connected=connectionState.connected===true;
             const known=connectionState.known===true;
-            const missing=Array.isArray(connectionState.missing_rights)?connectionState.missing_rights:[];
             if(!connected){
                 connectionEl.textContent=known?(currentLanguage==='ru'?'Не подключён':'Not connected'):(currentLanguage==='ru'?'Не удалось подтвердить подключение':'Could not verify connection');
                 connectionEl.style.color=known?'#aaa':'#eab308';
-            }else if(connectionState.rights_verified===false){
-                connectionEl.textContent=currentLanguage==='ru'?'Подключён, права не удалось проверить':'Connected, permissions could not be verified';
-                connectionEl.style.color='#eab308';
-            }else if(missing.length){
-                connectionEl.textContent=currentLanguage==='ru'?'Подключён, не все права выданы':'Connected, some permissions missing';
-                connectionEl.style.color='#eab308';
             }else{
-                connectionEl.textContent=currentLanguage==='ru'?'Подключён, все права подтверждены':'Connected, all permissions confirmed';
+                // Show the actual Telegram connection state only. Do not require
+                // all 14 optional Business rights to label the bot as connected.
+                connectionEl.textContent=currentLanguage==='ru'?'Подключён':'Connected';
                 connectionEl.style.color='#4ade80';
             }
-            connectionEl.title=missing.length?((currentLanguage==='ru'?'Не выданы права: ':'Missing permissions: ')+missing.join(', ')):(connectionState.source==='mtproto'?(currentLanguage==='ru'?'Проверено напрямую через Telegram':'Verified directly through Telegram'):'');
+            connectionEl.title=connected
+                ?(currentLanguage==='ru'?'Подключение активно. Права не используются для определения статуса подключения.':'Connection is active. Permissions do not determine connection status.')
+                :'';
         }
     }catch(error){console.error('LINKCHECK PLUS Business status render failed:',error)}
 
