@@ -5868,6 +5868,10 @@ def cache_mtproto_message_snapshot(event):
             "cached_at": time.time()
         }
         MT_PROTO_MESSAGE_CACHE[(int(chat_id), int(message.id))] = snapshot
+        logging.info(
+            "LINKCHECK PLUS MTProto snapshot cached owner=%s chat=%s message=%s text_length=%s",
+            owner_id, chat_id, message.id, len(content)
+        )
         MT_PROTO_CACHE_INSERT_COUNT += 1
         if MT_PROTO_CACHE_INSERT_COUNT % 250 == 0:
             cutoff = time.time() - MT_PROTO_MESSAGE_CACHE_TTL
