@@ -5629,6 +5629,12 @@ def business_sender_label(message: Message) -> str:
     return "Неизвестный отправитель"
 
 
+def business_message_is_outgoing(message: Message, owner_tg_id: int) -> bool:
+    """Bot API Message has no Telethon-style .out; compare sender with Business owner."""
+    sender = getattr(message, "from_user", None)
+    return bool(sender and int(sender.id) == int(owner_tg_id))
+
+
 async def handle_business_connection(connection):
     """Persist a BusinessConnection from aiogram or an unmodified Bot API JSON response."""
     if isinstance(connection, dict):
@@ -5710,8 +5716,8 @@ async def refresh_business_connection(connection_id: str):
 
 
 async def handle_business_message(message: Message):
-    logging.info("LINKCHECK PLUS: business_message handler started connection=%s chat=%s message=%s outgoing=%s",
-                 message.business_connection_id, message.chat.id, message.message_id, bool(message.out))
+    logging.info("LINKCHECK PLUS: business_message handler started connection=%s chat=%s message=%s",
+                 message.business_connection_id, message.chat.id, message.message_id)
     connection_id = message.business_connection_id
     if not connection_id:
         logging.warning("LINKCHECK PLUS: business_message arrived without business_connection_id")
@@ -5738,6 +5744,7 @@ async def handle_business_message(message: Message):
     if not sub or not sub["active"]:
         logging.info("LINKCHECK PLUS: skipped message because subscription is inactive owner=%s", connection["owner_tg_id"])
         return
+    is_outgoing = business_message_is_outgoing(message, int(connection["owner_tg_id"]))
     # Store the text/metadata synchronously BEFORE any media download. A slow or
     # failed download must never prevent the original message from being archived.
     # Business updates include both incoming and outgoing messages. Keep both:
@@ -5760,7 +5767,7 @@ async def handle_business_message(message: Message):
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
              content, message.caption or "", media_type, media_file_id,
-             old["media_path"] if old else None, int(bool(message.out)), now_iso())
+             old["media_path"] if old else None, int(is_outgoing), now_iso())
         )
         conn.execute(
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
@@ -5794,7 +5801,7 @@ async def handle_business_message(message: Message):
                 )
     logging.info(
         "LINKCHECK PLUS: saved Business message snapshot owner=%s chat=%s message=%s outgoing=%s media=%s text_length=%s",
-        connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
+        connection["owner_tg_id"], message.chat.id, message.message_id, is_outgoing,
         media_type or "none", len(content or "")
     )
 async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bool:
