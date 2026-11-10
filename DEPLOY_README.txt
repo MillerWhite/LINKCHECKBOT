@@ -115,3 +115,11 @@ LINKCHECK PLUS — проверка Business-подключения (допол�
 
 Исправление проверки разрешений Telegram Business (10.11.2026)
 MTProto (Telethon) и Bot API используют разные имена для части BusinessBotRights. В частности, MTProto `reply`, `delete_received_messages`, `view_gifts` и `sell_gifts` соответствуют Bot API `can_reply`, `can_delete_all_messages`, `can_view_gifts_and_stars` и `can_convert_gifts_to_stars`. Новая версия нормализует обе схемы в единый набор из 14 `can_*` полей и сохраняет в БД именно его. Отсутствующие optional-true поля Bot API трактуются как неподтверждённые права (false), а отсутствие самого объекта прав — как невозможность проверить разрешения. Это устраняет ложное предупреждение, вызванное несовпадением имён полей.
+
+LINKCHECK PLUS STATUS DIAGNOSTICS — 10.11.2026
+- The status refresh endpoint is read-only for `plus_subscriptions` and `plus_payments`. It must never reset a paid or trial subscription.
+- The Mini App keeps the last successfully loaded subscription status if the Business permission check fails; Business errors are displayed independently.
+- MTProto Business rights are normalized from the official 14 TL flag positions and their Telethon field names. Logs include `MTProto found bot=... rights_verified=... missing=[...]`.
+- The startup log prints `LINKCHECK SQLite database path: ...`. Confirm this path remains the same across redeployments and points into persistent `/app/data`. If the path changes, the service may be reading a different empty database, which can make a valid subscription appear missing. Do not delete or replace the existing DB.
+- If the status still says rights are missing, inspect the exact `missing=[...]` list in Bothost logs after pressing “Обновить статус”; this is the canonical diagnostic, not the UI label alone.
+- If the log says MTProto inspection failed/timed out, verify the saved Telethon session is logged into the same Telegram account opening the Mini App and that `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `TG_SESSION` still point to the existing session. Do not create a new session over the old one.

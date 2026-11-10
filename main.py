@@ -607,6 +607,19 @@ def now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+def parse_utc_datetime(value, fallback=None):
+    """Parse stored timestamps consistently; legacy naive values are UTC."""
+    if value in (None, ""):
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return fallback
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def linkcheck_badge_payload(row):
     """Фирменный значок: автоматически при OFFICIAL RESOURCE или вручную администратором."""
     keys = set(row.keys()) if hasattr(row, "keys") else set(row or {})
@@ -871,6 +884,7 @@ async def seed_public_catalog():
 
 
 def init_db():
+    logging.info("LINKCHECK SQLite database path: %s", os.path.abspath(DB_PATH))
     with db_connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("""
@@ -4961,11 +4975,8 @@ def plus_subscription_for(tg_id: int):
         row = conn.execute("SELECT * FROM plus_subscriptions WHERE tg_id=?", (tg_id,)).fetchone()
     if not row:
         return None
-    try:
-        expires = datetime.fromisoformat(row["expires_at"])
-        active = expires > datetime.now(timezone.utc)
-    except (TypeError, ValueError):
-        active = False
+    expires = parse_utc_datetime(row["expires_at"])
+    active = bool(expires and expires > datetime.now(timezone.utc))
     result = dict(row)
     result["active"] = active
     return result
@@ -4982,96 +4993,135 @@ PLUS_REQUIRED_BUSINESS_RIGHTS = (
     "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories",
 )
 
-# Telethon exposes MTProto BusinessBotRights names, which differ from Bot API
-# BusinessBotRights. Normalize both representations to the Bot API names used
-# by the rest of LINKCHECK. In particular: reply -> can_reply,
-# delete_received_messages -> can_delete_all_messages, sell_gifts ->
-# can_convert_gifts_to_stars, and view_gifts -> can_view_gifts_and_stars.
+# MTProto BusinessBotRights uses a different naming scheme and TL flag bits.
+# Keep both name aliases and the official bit positions as a final fallback.
 PLUS_BUSINESS_RIGHT_ALIASES = {
     "can_reply": ("can_reply", "reply"),
     "can_read_messages": ("can_read_messages", "read_messages"),
-    "can_delete_sent_messages": ("can_delete_sent_messages", "delete_sent_messages"),
-    "can_delete_all_messages": ("can_delete_all_messages", "delete_received_messages", "delete_all_messages"),
-    "can_edit_name": ("can_edit_name", "edit_name"),
-    "can_edit_bio": ("can_edit_bio", "edit_bio"),
-    "can_edit_profile_photo": ("can_edit_profile_photo", "edit_profile_photo"),
-    "can_edit_username": ("can_edit_username", "edit_username"),
-    "can_change_gift_settings": ("can_change_gift_settings", "change_gift_settings"),
-    "can_view_gifts_and_stars": ("can_view_gifts_and_stars", "view_gifts"),
-    "can_convert_gifts_to_stars": ("can_convert_gifts_to_stars", "sell_gifts", "convert_gifts_to_stars"),
-    "can_transfer_and_upgrade_gifts": ("can_transfer_and_upgrade_gifts", "transfer_and_upgrade_gifts"),
-    "can_transfer_stars": ("can_transfer_stars", "transfer_stars"),
-    "can_manage_stories": ("can_manage_stories", "manage_stories"),
+    "can_delete_sent_messages": ("can_delete_sent_messages", "delete_sent_messages", "deleteSentMessages"),
+    "can_delete_all_messages": ("can_delete_all_messages", "delete_received_messages", "delete_all_messages", "deleteReceivedMessages"),
+    "can_edit_name": ("can_edit_name", "edit_name", "editName"),
+    "can_edit_bio": ("can_edit_bio", "edit_bio", "editBio"),
+    "can_edit_profile_photo": ("can_edit_profile_photo", "edit_profile_photo", "editProfilePhoto"),
+    "can_edit_username": ("can_edit_username", "edit_username", "editUsername"),
+    "can_change_gift_settings": ("can_change_gift_settings", "change_gift_settings", "changeGiftSettings"),
+    "can_view_gifts_and_stars": ("can_view_gifts_and_stars", "view_gifts", "viewGifts"),
+    "can_convert_gifts_to_stars": ("can_convert_gifts_to_stars", "sell_gifts", "convert_gifts_to_stars", "sellGifts"),
+    "can_transfer_and_upgrade_gifts": ("can_transfer_and_upgrade_gifts", "transfer_and_upgrade_gifts", "transferAndUpgradeGifts"),
+    "can_transfer_stars": ("can_transfer_stars", "transfer_stars", "transferStars"),
+    "can_manage_stories": ("can_manage_stories", "manage_stories", "manageStories"),
+}
+PLUS_BUSINESS_RIGHT_BITS = {
+    "can_reply": 0, "can_read_messages": 1, "can_delete_sent_messages": 2,
+    "can_delete_all_messages": 3, "can_edit_name": 4, "can_edit_bio": 5,
+    "can_edit_profile_photo": 6, "can_edit_username": 7,
+    "can_view_gifts_and_stars": 8, "can_convert_gifts_to_stars": 9,
+    "can_change_gift_settings": 10, "can_transfer_and_upgrade_gifts": 11,
+    "can_transfer_stars": 12, "can_manage_stories": 13,
 }
 
+
 def normalize_plus_business_rights(rights_obj):
-    """Return a complete Bot-API-shaped rights map from Bot API or MTProto data."""
+    """Normalize Bot API/Pydantic/Telethon rights without losing TL flag values."""
     if rights_obj is None:
         return None
     if isinstance(rights_obj, dict):
-        source = rights_obj
+        source = dict(rights_obj)
     elif hasattr(rights_obj, "model_dump"):
         try:
             source = rights_obj.model_dump(exclude_none=True)
         except TypeError:
             source = rights_obj.model_dump()
     elif hasattr(rights_obj, "to_dict"):
-        source = rights_obj.to_dict()
+        try:
+            source = rights_obj.to_dict()
+        except Exception:
+            source = {}
     elif hasattr(rights_obj, "__dict__"):
         source = {key: value for key, value in vars(rights_obj).items() if not key.startswith("_")}
     else:
         source = {}
+    if not isinstance(source, dict):
+        source = {}
+
+    flags = source.get("flags", getattr(rights_obj, "flags", None))
+    try:
+        flags = int(flags) if flags is not None else None
+    except (TypeError, ValueError):
+        flags = None
 
     normalized = {}
     for canonical, aliases in PLUS_BUSINESS_RIGHT_ALIASES.items():
-        value_found = False
-        value = False
+        found = False
+        value = None
+        # Prefer explicitly serialized values, but do not let a None placeholder
+        # hide a valid Telethon attribute or TL bit.
         for alias in aliases:
-            if alias in source:
-                value = bool(source[alias])
-                value_found = True
+            candidate = source.get(alias)
+            if candidate is not None:
+                value = bool(candidate)
+                found = True
                 break
-            try:
-                attr = getattr(rights_obj, alias)
-            except (AttributeError, TypeError):
-                continue
-            if attr is not None:
-                value = bool(attr)
-                value_found = True
-                break
-        # TL optional-true fields are false when absent. For a real rights
-        # object this is a verified false, not an unknown value.
-        normalized[canonical] = value if value_found else False
+        if not found:
+            for alias in aliases:
+                try:
+                    candidate = getattr(rights_obj, alias)
+                except (AttributeError, TypeError):
+                    continue
+                if candidate is not None:
+                    value = bool(candidate)
+                    found = True
+                    break
+        if not found and flags is not None:
+            value = bool(flags & (1 << PLUS_BUSINESS_RIGHT_BITS[canonical]))
+            found = True
+        # A real Telegram rights object has a complete set of optional-true
+        # fields; an omitted flag means the corresponding permission is false.
+        normalized[canonical] = bool(value) if found else False
     return normalized
 
-async def inspect_owner_business_bot(owner_id: int):
-    """Inspect connected business bots through the owner's own MTProto session.
 
-    The Telethon session belongs to the project owner, so it must never be used
-    to claim the connection state of a different Mini App user.
-    """
+async def inspect_owner_business_bot(owner_id: int):
+    """Inspect Business bots only when Telethon session belongs to this user."""
     if not tg_ready or tg_client is None or functions is None:
         return None
     try:
         me = await tg_client.get_me()
         if not me or int(me.id) != int(owner_id):
             return None
-        request_type = getattr(getattr(functions, "account", None), "GetConnectedBotsRequest", None)
+        account_api = getattr(functions, "account", None)
+        request_type = getattr(account_api, "GetConnectedBotsRequest", None)
         if request_type is None:
-            logging.error("LINKCHECK PLUS: Telethon does not expose account.GetConnectedBotsRequest")
+            logging.error("LINKCHECK PLUS: Telethon layer lacks account.GetConnectedBotsRequest")
             return None
         result = await tg_client(request_type())
+        connected_bots = getattr(result, "connected_bots", None)
+        if connected_bots is None:
+            connected_bots = getattr(result, "connectedBots", None)
         expected_bot_id = int(BOT_TOKEN.split(":", 1)[0]) if BOT_TOKEN and ":" in BOT_TOKEN else 0
-        for item in (getattr(result, "connected_bots", None) or []):
-            if int(getattr(item, "bot_id", 0) or 0) == expected_bot_id:
-                rights_obj = getattr(item, "rights", None)
-                rights = normalize_plus_business_rights(rights_obj)
-                if rights is None:
-                    logging.warning("LINKCHECK PLUS: connected bot found but Telegram returned no rights object")
-                return {"connected": True, "rights": rights or {}, "rights_verified": rights is not None}
-        return {"connected": False, "rights": {}, "rights_verified": False}
-    except Exception as exc:
-        logging.warning("LINKCHECK PLUS: MTProto Business inspection failed for owner=%s: %s", owner_id, exc)
+        for item in (connected_bots or []):
+            item_bot_id = getattr(item, "bot_id", getattr(item, "botId", 0))
+            try:
+                item_bot_id = int(item_bot_id or 0)
+            except (TypeError, ValueError):
+                item_bot_id = 0
+            if item_bot_id != expected_bot_id:
+                continue
+            rights_obj = getattr(item, "rights", None)
+            rights = normalize_plus_business_rights(rights_obj)
+            verified = rights is not None
+            rights = rights or {}
+            missing = [key for key in PLUS_REQUIRED_BUSINESS_RIGHTS if not rights.get(key, False)] if verified else []
+            logging.info(
+                "LINKCHECK PLUS: MTProto found bot=%s owner=%s rights_verified=%s missing=%s raw_type=%s",
+                expected_bot_id, owner_id, verified, missing,
+                type(rights_obj).__name__ if rights_obj is not None else "None"
+            )
+            return {"connected": True, "rights": rights, "rights_verified": verified}
+        logging.info("LINKCHECK PLUS: MTProto did not find bot=%s in owner=%s connected bots", expected_bot_id, owner_id)
+        return {"connected": False, "rights": {}, "rights_verified": True}
+    except Exception:
+        logging.exception("LINKCHECK PLUS: MTProto Business inspection failed for owner=%s", owner_id)
         return None
 
 async def api_plus_status(request):
@@ -5106,11 +5156,14 @@ async def api_plus_status(request):
         except Exception as exc:
             logging.warning("LINKCHECK PLUS: Business status refresh failed for owner=%s: %s", owner_id, exc)
 
-    # If Bot API has never delivered/stored the connection_id, the Bot API
-    # cannot enumerate the user's connected bots. For the project owner's own
-    # account, use account.getConnectedBots through that same user's Telethon
-    # session to verify the actual connection and permissions immediately.
-    mtproto_business = await inspect_owner_business_bot(owner_id)
+    # MTProto can enumerate connected bots only for the same user whose
+    # Telethon session is active. Keep it bounded so a slow Telegram RPC cannot
+    # make the whole PLUS status endpoint time out.
+    try:
+        mtproto_business = await asyncio.wait_for(inspect_owner_business_bot(owner_id), timeout=7.0)
+    except asyncio.TimeoutError:
+        logging.warning("LINKCHECK PLUS: MTProto Business inspection timed out for owner=%s", owner_id)
+        mtproto_business = None
 
     plans = plus_plans()
     known_connection = connection is not None
@@ -5121,11 +5174,21 @@ async def api_plus_status(request):
             stored_rights_raw = json.loads(connection["rights_json"])
             stored_rights = normalize_plus_business_rights(stored_rights_raw) if stored_rights_raw else {}
         except (TypeError, ValueError):
+            logging.exception("LINKCHECK PLUS: stored Business rights JSON is invalid for owner=%s", owner_id)
             stored_rights = {}
     bot_api_rights_verified = bool(connection and all(right in stored_rights for right in required_rights))
     business_payload = ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"], "source": "bot_api", "rights": stored_rights, "rights_verified": bot_api_rights_verified} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None, "source": None, "rights": {}, "rights_verified": False})
-    if mtproto_business is not None:
-        business_payload = {"known": True, "connected": bool(mtproto_business["connected"]), "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {}), "rights_verified": bool(mtproto_business.get("rights_verified"))}
+
+    # A positive MTProto match with verified rights is the strongest owner-side
+    # result. If MTProto is unavailable or incomplete, retain a verified Bot API
+    # connection rather than overwriting it with an inconclusive result.
+    if mtproto_business and mtproto_business.get("connected"):
+        mtproto_rights_verified = bool(mtproto_business.get("rights_verified"))
+        if mtproto_rights_verified or not (known_connection and bot_api_rights_verified):
+            business_payload = {"known": True, "connected": True, "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {}), "rights_verified": mtproto_rights_verified}
+    elif mtproto_business and not mtproto_business.get("connected") and not (known_connection and connection["is_enabled"]):
+        business_payload = {"known": True, "connected": False, "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": {}, "rights_verified": False}
+
     business_payload["missing_rights"] = ([right for right in required_rights if not bool(business_payload.get("rights", {}).get(right, False))] if business_payload.get("connected") and business_payload.get("rights_verified") else [])
 
     return web.json_response({
@@ -5186,10 +5249,7 @@ async def api_plus_trial(request):
         except sqlite3.IntegrityError:
             return json_error("Тестовый период уже использован на этом аккаунте.", 409)
         current = conn.execute("SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (user["id"],)).fetchone()
-        try:
-            current_expiry = datetime.fromisoformat(current["expires_at"]) if current else now
-        except (TypeError, ValueError):
-            current_expiry = now
+        current_expiry = parse_utc_datetime(current["expires_at"], now) if current else now
         expiry = max(now, current_expiry) + timedelta(days=PLUS_TEST_DAYS)
         conn.execute("INSERT INTO plus_subscriptions(tg_id,plan_code,started_at,expires_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET plan_code='trial',expires_at=excluded.expires_at,updated_at=excluded.updated_at", (user["id"], "trial", now.isoformat(), expiry.isoformat(), now.isoformat()))
     try:
@@ -5272,10 +5332,7 @@ async def handle_plus_successful_payment(message: Message):
         current = conn.execute(
             "SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (message.from_user.id,)
         ).fetchone()
-        try:
-            current_expiry = datetime.fromisoformat(current["expires_at"]) if current else now
-        except (TypeError, ValueError):
-            current_expiry = now
+        current_expiry = parse_utc_datetime(current["expires_at"], now) if current else now
         base = max(now, current_expiry)
         duration_days = int(intent["duration_days"] or plan["days"])
         expires = base + timedelta(days=duration_days)

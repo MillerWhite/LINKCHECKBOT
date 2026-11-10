@@ -2231,30 +2231,92 @@ async function refreshPlusStatus(){
     catch(error){showToast(error?.message|| (currentLanguage==='ru'?'Не удалось обновить статус':'Could not refresh status'),'error');}
     finally{if(button){button.disabled=false;button.textContent=original;}}
 }
+let lastPlusStatusData=null;
 async function loadPlusStatus(){
-    const status=document.getElementById('plus-status-value');if(!status)return;
+    const status=document.getElementById('plus-status-value');
+    if(!status)return false;
+    let data;
     try{
-        const response=await fetch('/api/plus/status',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(12000)});
-        const data=await response.json();if(!response.ok)throw new Error(data.error||'PLUS status unavailable');
-        window.linkcheckPlusPaymentsEnabled=!!data.payments_enabled;window.linkcheckPlusIsAdmin=!!data.is_admin;
-        const sub=data.subscription;
-        status.textContent=sub?.active?(currentLanguage==='ru'?'Активна':'Active'):(currentLanguage==='ru'?'Не активна':'Inactive');status.style.color=sub?.active?'#4ade80':'#aaa';
-        document.getElementById('plus-expiry-value').textContent=sub?.active?formatPlusDate(sub.expires_at):'—';
-        const connectionState=data.business_connection||{};const connected=connectionState.connected===true;const known=connectionState.known===true;const connectionEl=document.getElementById('plus-connection-value');connectionEl.textContent=connected?(currentLanguage==='ru'?'Подключён':'Connected'):(known?(currentLanguage==='ru'?'Не подключён':'Not connected'):(currentLanguage==='ru'?'Не удалось подтвердить подключение':'Could not verify connection'));connectionEl.style.color=connected?'#4ade80':(known?'#aaa':'#eab308');
-        if(connectionEl){connectionEl.title=connectionState.source==='mtproto'?(currentLanguage==='ru'?'Проверено напрямую через Telegram аккаунта владельца':'Verified directly through the owner Telegram account'):(connectionState.source==='bot_api'?'Verified by Telegram Bot API':'');}
-        const plansEl=document.getElementById('plus-plans');const plans=data.plans||{};
-        const planOrder=['1m','6m','12m'];
-        plansEl.innerHTML=planOrder.filter(code=>plans[code]).map(code=>{const plan=plans[code];const title=escapeHTML(plan.title);const price=Number(plan.stars)||0;const old=Number(plan.base_stars)||price;const discount=Number(plan.discount_percent)||0;return `<button class="plus-plan" type="button" onclick="buyPlus('${code}',this)" ${!data.payments_enabled?'disabled':''}><b>${title}</b><span>${price.toLocaleString()} ⭐ ${discount?`<s>${old.toLocaleString()}</s> · −${discount}%`:''}</span></button>`}).join('');
-        const trialButton=document.getElementById('plus-trial-button');trialButton.style.display=data.trial_available?'block':'none';trialButton.disabled=!!sub?.active;trialButton.textContent=currentLanguage==='ru'?`Активировать тестовый доступ на ${Number(data.trial_days)||3} дня · 0 ⭐`:`Activate ${Number(data.trial_days)||3}-day trial · 0 ⭐`;
-        const renewNote=document.getElementById('plus-renew-note');if(renewNote)renewNote.textContent=data.payments_enabled?(currentLanguage==='ru'?'Разовая оплата Telegram Stars. Автоматического списания нет; продление вручную.':'One-time Telegram Stars payment. No automatic billing; renew manually.'):(currentLanguage==='ru'?'Покупка временно отключена администратором.':'Purchases are paused by the administrator.');
-        const history=Array.isArray(data.payments)?data.payments:[];const historyEl=document.getElementById('plus-payment-history');historyEl.innerHTML=history.length?`<b>${currentLanguage==='ru'?'История оплат':'Payment history'}</b><br>`+history.map(item=>`${escapeHTML(formatPlusDate(item.paid_at))} · ${Number(item.amount_stars)} ⭐ · ${escapeHTML(plans[item.plan_code]?.title||item.plan_code||'')}`).join('<br>'):(currentLanguage==='ru'?'Платежей пока нет':'No payments yet');
-        const adminBox=document.getElementById('plus-admin-box');adminBox.style.display=data.is_admin?'block':'none';if(data.is_admin)renderPlusAdminPlans(plans);
-        const missing=Array.isArray(connectionState.missing_rights)?connectionState.missing_rights:[];
-        if(connected&&missing.length){connectionEl.textContent=currentLanguage==='ru'?'Подключён, не все права выданы':'Connected, some permissions missing';connectionEl.style.color='#eab308';connectionEl.title=(currentLanguage==='ru'?'Не выданы права: ':'Missing permissions: ')+missing.join(', ');}
-        else if(connected&&connectionState.rights_verified===false){connectionEl.textContent=currentLanguage==='ru'?'Подключён, права не удалось проверить':'Connected, permissions could not be verified';connectionEl.style.color='#eab308';connectionEl.title=currentLanguage==='ru'?'Telegram подтвердил подключение, но не вернул сведения о разрешениях':'Telegram confirmed the connection but did not return permission details';}
-        else if(connected){connectionEl.textContent=currentLanguage==='ru'?'Подключён, все права подтверждены':'Connected, all permissions confirmed';connectionEl.style.color='#4ade80';}
-        return true;
-    }catch(error){console.error('LINKCHECK PLUS status error:',error);status.textContent=currentLanguage==='ru'?'Недоступно':'Unavailable';const connectionEl=document.getElementById('plus-connection-value');if(connectionEl)connectionEl.textContent=currentLanguage==='ru'?'Ошибка проверки':'Verification error';return false;}
+        const response=await fetch('/api/plus/status',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(20000)});
+        const raw=await response.text();
+        try{data=JSON.parse(raw)}catch(parseError){throw new Error('Сервер вернул некорректный ответ статуса (HTTP '+response.status+')')}
+        if(!response.ok)throw new Error(data?.error||('PLUS status HTTP '+response.status));
+        if(!data||typeof data!=='object')throw new Error('Пустой ответ статуса LINKCHECK PLUS');
+        lastPlusStatusData=data;
+    }catch(error){
+        console.error('LINKCHECK PLUS status request failed:',error);
+        // Never erase a previously confirmed subscription because a status
+        // refresh or the independent Business inspection failed.
+        if(!lastPlusStatusData){
+            status.textContent=currentLanguage==='ru'?'Не удалось обновить':'Could not refresh';
+            status.title=String(error?.message||error||'');
+        }
+        const connectionEl=document.getElementById('plus-connection-value');
+        if(connectionEl){connectionEl.textContent=currentLanguage==='ru'?'Не удалось проверить':'Could not verify';connectionEl.title=String(error?.message||error||'');}
+        return false;
+    }
+
+    window.linkcheckPlusPaymentsEnabled=!!data.payments_enabled;
+    window.linkcheckPlusIsAdmin=!!data.is_admin;
+
+    // Subscription rendering is deliberately isolated from Business status.
+    // A Business API/MTProto error must never turn an active subscription into
+    // "Unavailable" or blank its expiry date.
+    try{
+        if(Object.prototype.hasOwnProperty.call(data,'subscription')){
+            const sub=data.subscription;
+            status.textContent=sub?.active?(currentLanguage==='ru'?'Активна':'Active'):(currentLanguage==='ru'?'Не активна':'Inactive');
+            status.style.color=sub?.active?'#4ade80':'#aaa';
+            const expiryEl=document.getElementById('plus-expiry-value');
+            if(expiryEl)expiryEl.textContent=sub?.active?formatPlusDate(sub.expires_at):'—';
+            status.title='';
+        }
+    }catch(error){console.error('LINKCHECK PLUS subscription render failed:',error)}
+
+    const connectionState=data.business_connection&&typeof data.business_connection==='object'?data.business_connection:{};
+    const connectionEl=document.getElementById('plus-connection-value');
+    try{
+        if(connectionEl){
+            const connected=connectionState.connected===true;
+            const known=connectionState.known===true;
+            const missing=Array.isArray(connectionState.missing_rights)?connectionState.missing_rights:[];
+            if(!connected){
+                connectionEl.textContent=known?(currentLanguage==='ru'?'Не подключён':'Not connected'):(currentLanguage==='ru'?'Не удалось подтвердить подключение':'Could not verify connection');
+                connectionEl.style.color=known?'#aaa':'#eab308';
+            }else if(connectionState.rights_verified===false){
+                connectionEl.textContent=currentLanguage==='ru'?'Подключён, права не удалось проверить':'Connected, permissions could not be verified';
+                connectionEl.style.color='#eab308';
+            }else if(missing.length){
+                connectionEl.textContent=currentLanguage==='ru'?'Подключён, не все права выданы':'Connected, some permissions missing';
+                connectionEl.style.color='#eab308';
+            }else{
+                connectionEl.textContent=currentLanguage==='ru'?'Подключён, все права подтверждены':'Connected, all permissions confirmed';
+                connectionEl.style.color='#4ade80';
+            }
+            connectionEl.title=missing.length?((currentLanguage==='ru'?'Не выданы права: ':'Missing permissions: ')+missing.join(', ')):(connectionState.source==='mtproto'?(currentLanguage==='ru'?'Проверено напрямую через Telegram':'Verified directly through Telegram'):'');
+        }
+    }catch(error){console.error('LINKCHECK PLUS Business status render failed:',error)}
+
+    // Optional panels are rendered independently so a missing element cannot
+    // break subscription status or connection status.
+    try{
+        const plansEl=document.getElementById('plus-plans');
+        const plans=data.plans&&typeof data.plans==='object'?data.plans:{};
+        if(plansEl){
+            const planOrder=['1m','6m','12m'];
+            plansEl.innerHTML=planOrder.filter(code=>plans[code]).map(code=>{const plan=plans[code];const title=escapeHTML(plan.title||code);const price=Number(plan.stars)||0;const old=Number(plan.base_stars)||price;const discount=Number(plan.discount_percent)||0;return `<button class="plus-plan" type="button" onclick="buyPlus('${code}',this)" ${!data.payments_enabled?'disabled':''}><b>${title}</b><span>${price.toLocaleString()} ⭐ ${discount?`<s>${old.toLocaleString()}</s> · −${discount}%`:''}</span></button>`}).join('');
+        }
+        const trialButton=document.getElementById('plus-trial-button');
+        if(trialButton){const sub=data.subscription;trialButton.style.display=data.trial_available?'block':'none';trialButton.disabled=!!sub?.active;trialButton.textContent=currentLanguage==='ru'?`Активировать тестовый доступ на ${Number(data.trial_days)||3} дня · 0 ⭐`:`Activate ${Number(data.trial_days)||3}-day trial · 0 ⭐`;}
+        const renewNote=document.getElementById('plus-renew-note');
+        if(renewNote)renewNote.textContent=data.payments_enabled?(currentLanguage==='ru'?'Разовая оплата Telegram Stars. Автоматического списания нет; продление вручную.':'One-time Telegram Stars payment. No automatic billing; renew manually.'):(currentLanguage==='ru'?'Покупка временно отключена администратором.':'Purchases are paused by the administrator.');
+        const history=Array.isArray(data.payments)?data.payments:[];
+        const historyEl=document.getElementById('plus-payment-history');
+        if(historyEl)historyEl.innerHTML=history.length?`<b>${currentLanguage==='ru'?'История оплат':'Payment history'}</b><br>`+history.map(item=>`${escapeHTML(formatPlusDate(item.paid_at))} · ${Number(item.amount_stars)} ⭐ · ${escapeHTML(plans[item.plan_code]?.title||item.plan_code||'')}`).join('<br>'):(currentLanguage==='ru'?'Платежей пока нет':'No payments yet');
+        const adminBox=document.getElementById('plus-admin-box');
+        if(adminBox){adminBox.style.display=data.is_admin?'block':'none';if(data.is_admin)renderPlusAdminPlans(plans);}
+    }catch(error){console.error('LINKCHECK PLUS auxiliary panel render failed:',error)}
+    return true;
 }
 function renderPlusAdminPlans(plans){
     const target=document.getElementById('plus-admin-plans');if(!target)return;

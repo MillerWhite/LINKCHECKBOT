@@ -127,3 +127,28 @@ LINKCHECK PLUS — исправление ложного предупрежде�
 - Bot API не передаёт false-права как явные поля во всех случаях; отсутствующие optional-true поля теперь нормализуются в false, чтобы проверка не путала неполный JSON с неизвестным статусом.
 - Права сохраняются в БД в едином каноническом формате из 14 полей. Mini App показывает «Подключён, все права подтверждены» только после фактической проверки полного набора.
 - Если Telegram не вернул объект прав, интерфейс сообщает, что права проверить не удалось, вместо ложного сообщения об отсутствии разрешений.
+
+LINKCHECK PLUS — Business rights verification and subscription status isolation fix
+10.11.2026
+
+BACKEND main.py
+- Reworked BusinessBotRights normalization to support Bot API/Pydantic fields, Telethon snake_case attributes, camelCase serialized names, and the official MTProto TL flag bit positions (0–13).
+- Added structured diagnostics: the log now records whether the Business bot was found, whether rights were verifiable, the exact missing canonical rights, and the Telegram rights object type.
+- MTProto inspection is bounded to 7 seconds so a slow user-session RPC cannot stall the PLUS status endpoint.
+- An inconclusive MTProto result no longer overwrites a positive, verified Bot API Business connection.
+- Added a consistent UTC parser for subscription expiry timestamps. Legacy timestamps without timezone are interpreted as UTC, avoiding false inactive results and renewal arithmetic errors.
+- PLUS status endpoint remains read-only for subscription/payment records; refreshing Business status does not modify or delete subscriptions.
+- Startup logs the absolute SQLite DB path to make accidental DB_PATH changes visible.
+
+FRONTEND miniapp.html
+- Separated subscription rendering from Business connection rendering and optional panels.
+- A Business inspection/rendering error can no longer blank or replace an active subscription status.
+- A failed refresh preserves the last successfully loaded subscription and expiry instead of replacing them with “Unavailable”.
+- The refresh action now reports request success independently from the Business permission result; Business errors are shown in their own status line.
+- Expanded request timeout to 20 seconds to match the bounded backend inspection plus normal API processing.
+
+CHECKS
+- Python compile: PASS.
+- JavaScript syntax check: PASS.
+- Isolated tests: all 14 MTProto rights flags normalize to true; all 14 named Telethon fields normalize to true; naive legacy timestamps parse as UTC — PASS.
+- No live Telegram, payment, SQLite production DB, or Bothost integration test was performed in this build environment.
