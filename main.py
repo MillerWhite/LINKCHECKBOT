@@ -161,6 +161,9 @@ bot = Bot(
 )
 dp = Dispatcher()
 
+# Keep background Business media downloads alive until completion.
+BUSINESS_MEDIA_TASKS = set()
+
 tg_client = None
 tg_ready = False
 tg_start_error = None
