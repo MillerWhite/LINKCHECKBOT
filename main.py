@@ -5549,14 +5549,14 @@ async def persist_business_media_snapshot(message: Message, connection_id: str, 
                     "WHERE connection_id=? AND chat_id=? AND message_id=?",
                     (media_path, now_iso(), connection_id, message.chat.id, message.message_id)
                 )
-        if old_media_path and old_media_path != media_path:
+        if old_media_path and media_path and old_media_path != media_path:
             try:
                 if os.path.isfile(old_media_path):
                     os.remove(old_media_path)
             except OSError:
                 logging.exception("LINKCHECK PLUS: could not remove replaced media snapshot")
     except Exception:
-        logging.exception("LINKCHECK PLUS: background media snapshot failed connection=%s chat=%s message=%s",
+        logging.exception("LINKCHECK PLUS: media snapshot persistence failed connection=%s chat=%s message=%s",
                           connection_id, message.chat.id, message.message_id)
 
 
