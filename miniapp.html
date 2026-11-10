@@ -2251,6 +2251,8 @@ async function loadPlusStatus(){
         const adminBox=document.getElementById('plus-admin-box');adminBox.style.display=data.is_admin?'block':'none';if(data.is_admin)renderPlusAdminPlans(plans);
         const missing=Array.isArray(connectionState.missing_rights)?connectionState.missing_rights:[];
         if(connected&&missing.length){connectionEl.textContent=currentLanguage==='ru'?'Подключён, не все права выданы':'Connected, some permissions missing';connectionEl.style.color='#eab308';connectionEl.title=(currentLanguage==='ru'?'Не выданы права: ':'Missing permissions: ')+missing.join(', ');}
+        else if(connected&&connectionState.rights_verified===false){connectionEl.textContent=currentLanguage==='ru'?'Подключён, права не удалось проверить':'Connected, permissions could not be verified';connectionEl.style.color='#eab308';connectionEl.title=currentLanguage==='ru'?'Telegram подтвердил подключение, но не вернул сведения о разрешениях':'Telegram confirmed the connection but did not return permission details';}
+        else if(connected){connectionEl.textContent=currentLanguage==='ru'?'Подключён, все права подтверждены':'Connected, all permissions confirmed';connectionEl.style.color='#4ade80';}
         return true;
     }catch(error){console.error('LINKCHECK PLUS status error:',error);status.textContent=currentLanguage==='ru'?'Недоступно':'Unavailable';const connectionEl=document.getElementById('plus-connection-value');if(connectionEl)connectionEl.textContent=currentLanguage==='ru'?'Ошибка проверки':'Verification error';return false;}
 }

@@ -4975,6 +4975,75 @@ def plus_connection_count(tg_id: int) -> int:
         row = conn.execute("SELECT COUNT(*) AS n FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1", (tg_id,)).fetchone()
     return int(row["n"] if row else 0)
 
+PLUS_REQUIRED_BUSINESS_RIGHTS = (
+    "can_reply", "can_read_messages", "can_delete_sent_messages", "can_delete_all_messages",
+    "can_edit_name", "can_edit_bio", "can_edit_profile_photo", "can_edit_username",
+    "can_change_gift_settings", "can_view_gifts_and_stars", "can_convert_gifts_to_stars",
+    "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories",
+)
+
+# Telethon exposes MTProto BusinessBotRights names, which differ from Bot API
+# BusinessBotRights. Normalize both representations to the Bot API names used
+# by the rest of LINKCHECK. In particular: reply -> can_reply,
+# delete_received_messages -> can_delete_all_messages, sell_gifts ->
+# can_convert_gifts_to_stars, and view_gifts -> can_view_gifts_and_stars.
+PLUS_BUSINESS_RIGHT_ALIASES = {
+    "can_reply": ("can_reply", "reply"),
+    "can_read_messages": ("can_read_messages", "read_messages"),
+    "can_delete_sent_messages": ("can_delete_sent_messages", "delete_sent_messages"),
+    "can_delete_all_messages": ("can_delete_all_messages", "delete_received_messages", "delete_all_messages"),
+    "can_edit_name": ("can_edit_name", "edit_name"),
+    "can_edit_bio": ("can_edit_bio", "edit_bio"),
+    "can_edit_profile_photo": ("can_edit_profile_photo", "edit_profile_photo"),
+    "can_edit_username": ("can_edit_username", "edit_username"),
+    "can_change_gift_settings": ("can_change_gift_settings", "change_gift_settings"),
+    "can_view_gifts_and_stars": ("can_view_gifts_and_stars", "view_gifts"),
+    "can_convert_gifts_to_stars": ("can_convert_gifts_to_stars", "sell_gifts", "convert_gifts_to_stars"),
+    "can_transfer_and_upgrade_gifts": ("can_transfer_and_upgrade_gifts", "transfer_and_upgrade_gifts"),
+    "can_transfer_stars": ("can_transfer_stars", "transfer_stars"),
+    "can_manage_stories": ("can_manage_stories", "manage_stories"),
+}
+
+def normalize_plus_business_rights(rights_obj):
+    """Return a complete Bot-API-shaped rights map from Bot API or MTProto data."""
+    if rights_obj is None:
+        return None
+    if isinstance(rights_obj, dict):
+        source = rights_obj
+    elif hasattr(rights_obj, "model_dump"):
+        try:
+            source = rights_obj.model_dump(exclude_none=True)
+        except TypeError:
+            source = rights_obj.model_dump()
+    elif hasattr(rights_obj, "to_dict"):
+        source = rights_obj.to_dict()
+    elif hasattr(rights_obj, "__dict__"):
+        source = {key: value for key, value in vars(rights_obj).items() if not key.startswith("_")}
+    else:
+        source = {}
+
+    normalized = {}
+    for canonical, aliases in PLUS_BUSINESS_RIGHT_ALIASES.items():
+        value_found = False
+        value = False
+        for alias in aliases:
+            if alias in source:
+                value = bool(source[alias])
+                value_found = True
+                break
+            try:
+                attr = getattr(rights_obj, alias)
+            except (AttributeError, TypeError):
+                continue
+            if attr is not None:
+                value = bool(attr)
+                value_found = True
+                break
+        # TL optional-true fields are false when absent. For a real rights
+        # object this is a verified false, not an unknown value.
+        normalized[canonical] = value if value_found else False
+    return normalized
+
 async def inspect_owner_business_bot(owner_id: int):
     """Inspect connected business bots through the owner's own MTProto session.
 
@@ -4996,14 +5065,11 @@ async def inspect_owner_business_bot(owner_id: int):
         for item in (getattr(result, "connected_bots", None) or []):
             if int(getattr(item, "bot_id", 0) or 0) == expected_bot_id:
                 rights_obj = getattr(item, "rights", None)
-                if rights_obj is not None and hasattr(rights_obj, "to_dict"):
-                    rights = rights_obj.to_dict()
-                elif rights_obj is not None and hasattr(rights_obj, "__dict__"):
-                    rights = {key: value for key, value in vars(rights_obj).items() if not key.startswith("_")}
-                else:
-                    rights = {}
-                return {"connected": True, "rights": rights}
-        return {"connected": False, "rights": {}}
+                rights = normalize_plus_business_rights(rights_obj)
+                if rights is None:
+                    logging.warning("LINKCHECK PLUS: connected bot found but Telegram returned no rights object")
+                return {"connected": True, "rights": rights or {}, "rights_verified": rights is not None}
+        return {"connected": False, "rights": {}, "rights_verified": False}
     except Exception as exc:
         logging.warning("LINKCHECK PLUS: MTProto Business inspection failed for owner=%s: %s", owner_id, exc)
         return None
@@ -5048,17 +5114,19 @@ async def api_plus_status(request):
 
     plans = plus_plans()
     known_connection = connection is not None
-    required_rights = ["can_reply", "can_read_messages", "can_delete_sent_messages", "can_delete_all_messages", "can_edit_name", "can_edit_bio", "can_edit_profile_photo", "can_edit_username", "can_change_gift_settings", "can_view_gifts_and_stars", "can_convert_gifts_to_stars", "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories"]
+    required_rights = list(PLUS_REQUIRED_BUSINESS_RIGHTS)
     stored_rights = {}
     if connection and connection["rights_json"]:
         try:
-            stored_rights = json.loads(connection["rights_json"])
+            stored_rights_raw = json.loads(connection["rights_json"])
+            stored_rights = normalize_plus_business_rights(stored_rights_raw) if stored_rights_raw else {}
         except (TypeError, ValueError):
             stored_rights = {}
-    business_payload = ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"], "source": "bot_api", "rights": stored_rights} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None, "source": None, "rights": {}})
+    bot_api_rights_verified = bool(connection and all(right in stored_rights for right in required_rights))
+    business_payload = ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"], "source": "bot_api", "rights": stored_rights, "rights_verified": bot_api_rights_verified} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None, "source": None, "rights": {}, "rights_verified": False})
     if mtproto_business is not None:
-        business_payload = {"known": True, "connected": bool(mtproto_business["connected"]), "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {})}
-    business_payload["missing_rights"] = [right for right in required_rights if business_payload.get("connected") and not bool(business_payload.get("rights", {}).get(right, False))]
+        business_payload = {"known": True, "connected": bool(mtproto_business["connected"]), "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {}), "rights_verified": bool(mtproto_business.get("rights_verified"))}
+    business_payload["missing_rights"] = ([right for right in required_rights if not bool(business_payload.get("rights", {}).get(right, False))] if business_payload.get("connected") and business_payload.get("rights_verified") else [])
 
     return web.json_response({
         "payments_enabled": PLUS_PAYMENTS_ENABLED,
@@ -5319,7 +5387,10 @@ def business_sender_label(message: Message) -> str:
 
 async def handle_business_connection(connection):
     owner_id = int(connection.user.id)
-    rights = connection.rights.model_dump(exclude_none=True) if connection.rights else {}
+    # Bot API may omit denied optional-true fields. Normalize them to explicit
+    # False values so the Mini App can distinguish verified missing rights
+    # from an unavailable permissions payload.
+    rights = normalize_plus_business_rights(connection.rights) if connection.rights else {}
     removed_media_paths = []
     with db_connect() as conn:
         conn.execute(
