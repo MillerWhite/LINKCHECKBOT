@@ -5868,10 +5868,10 @@ async def cache_mtproto_message_snapshot(event):
                     timeout=25
                 )
                 if isinstance(downloaded, bytes) and downloaded:
-                    if len(downloaded) <= 20 * 1024 * 1024:
+                    if len(downloaded) <= 50 * 1024 * 1024:
                         media_bytes = downloaded
                     else:
-                        media_error = "over_20mb"
+                        media_error = "over_50mb"
                 else:
                     media_error = "download_unavailable"
             except asyncio.TimeoutError:
@@ -6078,6 +6078,14 @@ async def handle_edited_business_message(message: Message):
             if old:
                 break
             await asyncio.sleep(0.1)
+    elif old["media_type"] and not old["media_path"]:
+        # The text row may already exist even when its asynchronous-era media
+        # download failed. Recover the RAM-only MTProto attachment if available.
+        recovered = await recover_business_snapshot_from_mtproto(
+            connection_id, int(connection["owner_tg_id"]), message.chat.id, message.message_id
+        )
+        if recovered:
+            old = recovered
     sub = plus_subscription_for(int(connection["owner_tg_id"]))
     if not sub or not sub["active"]:
         return
@@ -6150,6 +6158,16 @@ async def handle_deleted_business_messages(event):
                 rows.append(dict(row))
             else:
                 missing.append(int(message_id))
+    # Recover media bytes for known text snapshots whose Bot API file download
+    # failed; the original metadata row must not hide the MTProto media backup.
+    for index, record in enumerate(rows):
+        if record.get("media_type") and not record.get("media_path"):
+            recovered_row = await recover_business_snapshot_from_mtproto(
+                event.business_connection_id, int(connection["owner_tg_id"]),
+                event.chat.id, int(record["message_id"])
+            )
+            if recovered_row:
+                rows[index] = dict(recovered_row)
     recovered = []
     for message_id in list(missing):
         row = await recover_business_snapshot_from_mtproto(
