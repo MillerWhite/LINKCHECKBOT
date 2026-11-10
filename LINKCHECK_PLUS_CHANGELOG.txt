@@ -42,3 +42,29 @@ LINKCHECK PLUS — Stars + Telegram Business module (10.11.2026)
 - Added PLUS_PAYMENTS_ENABLED safety switch (defaults to false) so invoices cannot be sold before Fragment withdrawal eligibility is confirmed.
 - Added hourly retention cleanup for Business message records older than 30 days.
 - Deployment instructions now include enabling Business/Secretary Mode in @BotFather before users connect the bot.
+
+LINKCHECK PLUS — главная страница, тестовый период и управление тарифами
+10.11.2026
+
+FRONTEND miniapp.html
+- Кнопка LINKCHECK PLUS перенесена с экрана Профиль на главную страницу под статистику.
+- Добавлено полноэкранное окно подписки в визуальном стиле окна политики конфиденциальности.
+- Из Профиля удалён старый блок подписки.
+- В окне PLUS показываются статус, срок действия, Business connection, тарифы, история платежей и инструкция.
+- Для администратора отображается встроенный редактор тарифов.
+
+BACKEND main.py
+- Добавлен бесплатный тестовый доступ на 3 дня, 0 Stars, один раз на Telegram ID.
+- Тестовая подписка использует тот же механизм контроля срока действия, что и платная подписка, и включает Business event processing.
+- Добавлена серверная настройка тарифов в SQLite: срок в днях, базовая цена Stars и процент скидки.
+- Администратор может редактировать срок, цену и скидку через Mini App; доступ защищён проверкой ADMIN_IDS и Telegram initData.
+- Итоговая стоимость рассчитывается сервером. Ограничены допустимые диапазоны значений.
+- Для каждого счёта фиксируется срок на момент создания; последующее редактирование тарифа не меняет ранее выставленный invoice.
+- PLUS_PAYMENTS_ENABLED теперь включён по умолчанию; явное значение false в окружении Bothost по-прежнему отключает выставление счетов.
+- Начальные цены: 200 Stars / 30 дней; 1 000 Stars со скидкой 17% = 830 Stars / 180 дней; 1 800 Stars со скидкой 25% = 1 350 Stars / 365 дней.
+
+ПРОВЕРКИ
+- Python syntax compile — PASS.
+- JavaScript syntax check — PASS.
+- Интеграционный запуск backend/SQLite в этой среде не выполнен: отсутствует установленная библиотека aiogram.
+- Live Telegram Stars checkout, Telegram Business events и хостинг не проверялись из этой среды.

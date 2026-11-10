@@ -79,7 +79,7 @@ ADMIN_IDS = {
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "linkcheck.db"))
 PORT = int(os.getenv("PORT", "8080"))
-PLUS_PAYMENTS_ENABLED = os.getenv("PLUS_PAYMENTS_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
+PLUS_PAYMENTS_ENABLED = os.getenv("PLUS_PAYMENTS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "86400"))
 
 # Bothost's documentation uses TELEGRAM_API_ID / TELEGRAM_API_HASH;
@@ -1163,10 +1163,38 @@ def init_db():
                 tg_id INTEGER NOT NULL,
                 plan_code TEXT NOT NULL,
                 amount_stars INTEGER NOT NULL,
+                duration_days INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending'
             )
         """)
+        ensure_column(conn, "plus_invoice_intents", "duration_days", "INTEGER NOT NULL DEFAULT 0")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_plan_settings (
+                plan_code TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                days INTEGER NOT NULL,
+                base_stars INTEGER NOT NULL,
+                discount_percent INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_trial_claims (
+                tg_id INTEGER PRIMARY KEY,
+                claimed_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+        for _code, _plan in {
+            "1m": ("1 месяц", 30, 200, 0),
+            "6m": ("6 месяцев", 180, 1000, 17),
+            "12m": ("12 месяцев", 365, 1800, 25),
+        }.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO plus_plan_settings(plan_code,title,days,base_stars,discount_percent,updated_at) VALUES(?,?,?,?,?,?)",
+                (_code, _plan[0], _plan[1], _plan[2], _plan[3], now_iso())
+            )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS plus_payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4899,19 +4927,32 @@ async def watchlist_monitor_loop():
 # LINKCHECK PLUS — TELEGRAM STARS + TELEGRAM BUSINESS
 # ============================================================
 
-PLUS_PLANS = {
-    "1m": {"title": "1 месяц", "days": 30, "stars": 200},
-    "6m": {"title": "6 месяцев", "days": 180, "stars": 1000},
-    "12m": {"title": "12 месяцев", "days": 365, "stars": 1800},
+PLUS_DEFAULT_PLANS = {
+    "1m": {"title": "1 месяц", "days": 30, "stars": 200, "base_stars": 200, "discount_percent": 0},
+    "6m": {"title": "6 месяцев", "days": 180, "stars": 830, "base_stars": 1000, "discount_percent": 17},
+    "12m": {"title": "1 год", "days": 365, "stars": 1350, "base_stars": 1800, "discount_percent": 25},
 }
 PLUS_MESSAGE_RETENTION_DAYS = 30
+PLUS_TEST_DAYS = 3
 
+def plus_plans():
+    with db_connect() as conn:
+        rows = conn.execute("SELECT * FROM plus_plan_settings ORDER BY CASE plan_code WHEN '1m' THEN 1 WHEN '6m' THEN 2 ELSE 3 END").fetchall()
+    plans = {}
+    for row in rows:
+        item = dict(row)
+        base = max(1, int(item["base_stars"]))
+        discount = max(0, min(90, int(item["discount_percent"])))
+        item["days"] = max(1, min(3650, int(item["days"])))
+        item["base_stars"] = base
+        item["discount_percent"] = discount
+        item["stars"] = max(1, int(round(base * (100 - discount) / 100)))
+        plans[item["plan_code"]] = item
+    return plans or dict(PLUS_DEFAULT_PLANS)
 
 def plus_subscription_for(tg_id: int):
     with db_connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM plus_subscriptions WHERE tg_id=?", (tg_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM plus_subscriptions WHERE tg_id=?", (tg_id,)).fetchone()
     if not row:
         return None
     try:
@@ -4923,15 +4964,10 @@ def plus_subscription_for(tg_id: int):
     result["active"] = active
     return result
 
-
 def plus_connection_count(tg_id: int) -> int:
     with db_connect() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM plus_business_connections "
-            "WHERE owner_tg_id=? AND is_enabled=1", (tg_id,)
-        ).fetchone()
+        row = conn.execute("SELECT COUNT(*) AS n FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1", (tg_id,)).fetchone()
     return int(row["n"] if row else 0)
-
 
 async def api_plus_status(request):
     user = authenticated_user(request)
@@ -4940,31 +4976,21 @@ async def api_plus_status(request):
     upsert_user(user["id"], user.get("username"))
     sub = plus_subscription_for(user["id"])
     with db_connect() as conn:
-        payments = conn.execute(
-            "SELECT plan_code, amount_stars, paid_at, expires_at "
-            "FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10",
-            (user["id"],)
-        ).fetchall()
-        connection = conn.execute(
-            "SELECT is_enabled, connected_at, updated_at FROM plus_business_connections "
-            "WHERE owner_tg_id=? ORDER BY is_enabled DESC, updated_at DESC LIMIT 1", (user["id"],)
-        ).fetchone()
+        payments = conn.execute("SELECT plan_code, amount_stars, paid_at, expires_at FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10", (user["id"],)).fetchall()
+        connection = conn.execute("SELECT is_enabled, connected_at, updated_at FROM plus_business_connections WHERE owner_tg_id=? ORDER BY is_enabled DESC, updated_at DESC LIMIT 1", (user["id"],)).fetchone()
+        trial = conn.execute("SELECT expires_at FROM plus_trial_claims WHERE tg_id=?", (user["id"],)).fetchone()
+    plans = plus_plans()
     return web.json_response({
         "payments_enabled": PLUS_PAYMENTS_ENABLED,
-        "plans": {key: {"title": value["title"], "days": value["days"], "stars": value["stars"]}
-                  for key, value in PLUS_PLANS.items()},
-        "subscription": ({
-            "active": bool(sub["active"]), "plan": sub.get("plan_code"),
-            "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")
-        } if sub else None),
-        "business_connection": ({
-            "connected": bool(connection["is_enabled"]),
-            "connected_at": connection["connected_at"]
-        } if connection else {"connected": False}),
+        "is_admin": user["id"] in ADMIN_IDS,
+        "trial_available": trial is None,
+        "trial_days": PLUS_TEST_DAYS,
+        "plans": {key: {"title": value["title"], "days": value["days"], "stars": value["stars"], "base_stars": value["base_stars"], "discount_percent": value["discount_percent"]} for key, value in plans.items()},
+        "subscription": ({"active": bool(sub["active"]), "plan": sub.get("plan_code"), "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")} if sub else None),
+        "business_connection": ({"connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"]} if connection else {"connected": False}),
         "payments": [dict(row) for row in payments],
         "message_retention_days": PLUS_MESSAGE_RETENTION_DAYS
-    })
-
+    }, headers={"Cache-Control": "no-store"})
 
 async def api_plus_invoice(request):
     user = authenticated_user(request)
@@ -4975,29 +5001,19 @@ async def api_plus_invoice(request):
     except web.HTTPException:
         return json_error("Некорректный запрос")
     if not PLUS_PAYMENTS_ENABLED:
-        return json_error("Оплата LINKCHECK PLUS временно отключена до подтверждения доступности вывода вознаграждений.", 503)
+        return json_error("Оплата LINKCHECK PLUS временно отключена администратором.", 503)
     plan_code = str(data.get("plan", ""))
-    plan = PLUS_PLANS.get(plan_code)
+    plan = plus_plans().get(plan_code)
     if not plan:
         return json_error("Неизвестный тариф")
     payload = f"linkcheck_plus:{user['id']}:{plan_code}:{secrets.token_urlsafe(12)}"
     with db_connect() as conn:
-        conn.execute(
-            "INSERT INTO plus_invoice_intents(payload,tg_id,plan_code,amount_stars,created_at,status) "
-            "VALUES(?,?,?,?,?,'pending')",
-            (payload, user["id"], plan_code, plan["stars"], now_iso())
-        )
+        conn.execute("INSERT INTO plus_invoice_intents(payload,tg_id,plan_code,amount_stars,duration_days,created_at,status) VALUES(?,?,?,?,?,?,'pending')", (payload, user["id"], plan_code, plan["stars"], plan["days"], now_iso()))
     try:
         invoice_url = await bot.create_invoice_link(
             title=f"LINKCHECK PLUS — {plan['title']}",
-            description=(
-                f"Доступ к LINKCHECK PLUS на {plan['days']} дней. "
-                "Мониторинг изменений и удалений сообщений Telegram Business "
-                "в пределах данных, доставленных Telegram боту."
-            ),
-            payload=payload,
-            provider_token="",
-            currency="XTR",
+            description=f"Доступ к LINKCHECK PLUS на {plan['days']} дней. Мониторинг редактирования и удаления сообщений Telegram Business в пределах данных, доставленных боту.",
+            payload=payload, provider_token="", currency="XTR",
             prices=[LabeledPrice(label=f"LINKCHECK PLUS · {plan['title']}", amount=plan["stars"])],
         )
     except Exception:
@@ -5006,6 +5022,60 @@ async def api_plus_invoice(request):
             conn.execute("UPDATE plus_invoice_intents SET status='failed' WHERE payload=?", (payload,))
         return json_error("Не удалось создать счёт Telegram Stars. Попробуйте позже.", 502)
     return web.json_response({"invoice_url": invoice_url, "plan": plan_code, "stars": plan["stars"]})
+
+async def api_plus_trial(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку", 401)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=PLUS_TEST_DAYS)
+    existing_sub = plus_subscription_for(user["id"])
+    if existing_sub and existing_sub["active"]:
+        return json_error("У вас уже есть активная подписка LINKCHECK PLUS.", 409)
+    with db_connect() as conn:
+        try:
+            conn.execute("INSERT INTO plus_trial_claims(tg_id,claimed_at,expires_at) VALUES(?,?,?)", (user["id"], now.isoformat(), expires.isoformat()))
+        except sqlite3.IntegrityError:
+            return json_error("Тестовый период уже использован на этом аккаунте.", 409)
+        current = conn.execute("SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (user["id"],)).fetchone()
+        try:
+            current_expiry = datetime.fromisoformat(current["expires_at"]) if current else now
+        except (TypeError, ValueError):
+            current_expiry = now
+        expiry = max(now, current_expiry) + timedelta(days=PLUS_TEST_DAYS)
+        conn.execute("INSERT INTO plus_subscriptions(tg_id,plan_code,started_at,expires_at,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET plan_code='trial',expires_at=excluded.expires_at,updated_at=excluded.updated_at", (user["id"], "trial", now.isoformat(), expiry.isoformat(), now.isoformat()))
+    try:
+        await bot.send_message(user["id"], f"<b>LINKCHECK PLUS — тестовый доступ активирован</b>\nСрок: {PLUS_TEST_DAYS} дня\nДействует до: {expiry.strftime('%d.%m.%Y %H:%M UTC')}")
+    except Exception:
+        pass
+    return web.json_response({"ok": True, "expires_at": expiry.isoformat(), "days": PLUS_TEST_DAYS})
+
+async def api_admin_plus_settings(request):
+    admin = admin_user(request)
+    if not admin:
+        return json_error("Forbidden", 403)
+    return web.json_response({"plans": plus_plans(), "payments_enabled": PLUS_PAYMENTS_ENABLED})
+
+async def api_admin_plus_update(request):
+    admin = admin_user(request)
+    if not admin:
+        return json_error("Forbidden", 403)
+    try:
+        data = await read_json(request)
+    except web.HTTPException:
+        return json_error("Некорректный запрос")
+    code = str(data.get("plan", ""))
+    if code not in {"1m", "6m", "12m"}:
+        return json_error("Неизвестный тариф")
+    try:
+        days = int(data.get("days")); base = int(data.get("base_stars")); discount = int(data.get("discount_percent"))
+    except (TypeError, ValueError):
+        return json_error("Срок, цена и скидка должны быть числами")
+    if not 1 <= days <= 3650 or not 1 <= base <= 1000000 or not 0 <= discount <= 90:
+        return json_error("Допустимые значения: срок 1–3650 дней, цена 1–1 000 000 Stars, скидка 0–90%")
+    with db_connect() as conn:
+        conn.execute("UPDATE plus_plan_settings SET days=?,base_stars=?,discount_percent=?,updated_at=? WHERE plan_code=?", (days, base, discount, now_iso(), code))
+    return web.json_response({"ok": True, "plans": plus_plans()})
 
 
 async def handle_plus_pre_checkout(query: PreCheckoutQuery):
@@ -5047,7 +5117,7 @@ async def handle_plus_successful_payment(message: Message):
         if not intent or int(payment.total_amount) != int(intent["amount_stars"]):
             logging.warning("Получен неподтверждённый LINKCHECK PLUS payment update от %s", message.from_user.id)
             return
-        plan = PLUS_PLANS.get(intent["plan_code"])
+        plan = plus_plans().get(intent["plan_code"])
         if not plan:
             return
         now = datetime.now(timezone.utc)
@@ -5059,7 +5129,8 @@ async def handle_plus_successful_payment(message: Message):
         except (TypeError, ValueError):
             current_expiry = now
         base = max(now, current_expiry)
-        expires = base + timedelta(days=plan["days"])
+        duration_days = int(intent["duration_days"] or plan["days"])
+        expires = base + timedelta(days=duration_days)
         conn.execute(
             "INSERT INTO plus_payments(tg_id,plan_code,amount_stars,currency,telegram_payment_charge_id,provider_payment_charge_id,paid_at,expires_at) "
             "VALUES(?,?,?,?,?,?,?,?)",
@@ -5472,6 +5543,9 @@ async def start_web_server():
     app.router.add_get("/api/me", api_me)
     app.router.add_get("/api/plus/status", api_plus_status)
     app.router.add_post("/api/plus/invoice", api_plus_invoice)
+    app.router.add_post("/api/plus/trial", api_plus_trial)
+    app.router.add_get("/api/admin/plus/settings", api_admin_plus_settings)
+    app.router.add_post("/api/admin/plus/update", api_admin_plus_update)
     app.router.add_post("/api/request_access", api_request_access)
     app.router.add_post("/api/check", api_check)
     app.router.add_get("/api/check/history", api_check_history)

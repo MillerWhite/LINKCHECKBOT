@@ -211,6 +211,9 @@ input::placeholder,textarea::placeholder{color:#666}
 .notification-meta{font-size:11px;color:#777}
 .owner-analytics{margin-top:18px}
 .plus-panel{margin-top:14px;border:1px solid #343434;background:linear-gradient(145deg,#151515,#0d0d0d)}.plus-muted{font-size:12px;color:#888;line-height:1.55}.plus-status{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #292929;font-size:12px}.plus-plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.plus-plan{min-width:0;padding:12px 7px;border:1px solid #414141;border-radius:11px;background:#ffffff08;color:#fff;text-align:center;cursor:pointer}.plus-plan b{display:block;font-size:13px}.plus-plan span{display:block;margin-top:6px;color:#aaa;font-size:11px}.plus-plan:disabled{opacity:.5}.plus-history{margin-top:12px;font-size:11px;color:#999;line-height:1.7}.plus-connect-steps{padding-left:18px;color:#aaa;font-size:12px;line-height:1.7}.plus-connect-steps li{margin:4px 0}
+
+.plus-home-entry{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;margin:18px 0 22px;padding:16px 15px;border:1px solid #353535;border-radius:15px;background:linear-gradient(115deg,#171717 0%,#0c0c0c 100%);color:#f2f2f2;text-align:left;cursor:pointer;box-shadow:0 8px 28px #0005;transition:border-color .2s,transform .2s}.plus-home-entry:active{transform:scale(.99);border-color:#777}.plus-home-entry-main{display:flex;align-items:center;gap:12px;min-width:0}.plus-home-mark{display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border:1px solid #555;border-radius:11px;background:#ffffff08;color:#e8e8e8;font-size:19px}.plus-home-title{display:block;font-size:14px;font-weight:850;letter-spacing:.45px}.plus-home-caption{display:block;margin-top:4px;color:#888;font-size:11px;line-height:1.4}.plus-home-arrow{color:#777;font-size:22px}.plus-modal{position:fixed;inset:0;z-index:2450;display:none;flex-direction:column;background:#080808}.plus-modal.open{display:flex}.plus-modal-header{height:58px;flex:0 0 58px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid #292929;background:#080808}.plus-modal-title{font-size:13px;font-weight:850;letter-spacing:.6px}.plus-modal-body{height:calc(100% - 58px);overflow:auto;padding:16px 16px 36px}.plus-modal .plus-panel{margin:0;border-radius:16px}.plus-admin-box{margin-top:20px;padding:14px;border:1px solid #383838;border-radius:13px;background:#0d0d0d}.plus-admin-plan{padding:12px 0;border-top:1px solid #262626}.plus-admin-plan:first-of-type{border-top:0}.plus-admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}.plus-admin-grid label{display:block;color:#888;font-size:10px}.plus-admin-grid input{width:100%;min-width:0;margin-top:5px;padding:9px 7px;border:1px solid #333;border-radius:8px;background:#111;color:#fff;font-size:12px}.plus-admin-save{width:100%;min-height:36px;border:1px solid #555;border-radius:9px;background:#eee;color:#080808;font-weight:800;font-size:11px}.plus-trial-button{width:100%;margin-top:12px;padding:12px;border:1px solid #555;border-radius:10px;background:#ffffff08;color:#eee;font-size:12px;font-weight:800}.plus-admin-note{color:#777;font-size:10px;line-height:1.5;margin-top:8px}
+
 .owner-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
 .owner-metric{padding:13px;border:1px solid #292929;border-radius:12px;background:#0b0b0b;min-width:0}
 .owner-metric strong{display:block;font-size:22px;line-height:1.2}
@@ -283,6 +286,9 @@ input::placeholder,textarea::placeholder{color:#666}
         <div id="result-text" style="font-size:14px;color:var(--silver);line-height:1.6"></div>
     </div>
     <div class="stats-row"><div class="stat-box"><div class="stat-num" id="stat-projects">-</div><div class="stat-label" data-i18n="projects">Проектов</div></div></div>
+    <button class="plus-home-entry" type="button" onclick="openPlusModal()" aria-label="LINKCHECK PLUS">
+        <span class="plus-home-entry-main"><span class="plus-home-mark">✦</span><span><span class="plus-home-title">LINKCHECK PLUS</span><span class="plus-home-caption" data-i18n="plusHomeCaption">Дополнительная защита переписок · Подписка</span></span></span><span class="plus-home-arrow">›</span>
+    </button>
     <h2 data-i18n="recentChecks">Последние проверки</h2>
     <div id="recent-projects" class="recent-grid"><div class="empty-state" data-i18n="noProjects">Пока нет добавленных проектов</div></div>
     <div class="founder-card">
@@ -381,27 +387,6 @@ input::placeholder,textarea::placeholder{color:#666}
         </div>
         <div id="owner-analytics-content"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
     </div>
-    <div class="card plus-panel" id="plus-panel">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-            <div><div style="font-size:17px;font-weight:900;letter-spacing:.5px">LINKCHECK PLUS</div><div class="plus-muted" id="plus-subtitle">Мониторинг изменений и удалений сообщений Telegram Business</div></div>
-            <span style="font-size:20px">✦</span>
-        </div>
-        <div class="plus-status"><span id="plus-status-label">Подписка</span><b id="plus-status-value">Загрузка...</b></div>
-        <div class="plus-status"><span id="plus-expiry-label">Действует до</span><b id="plus-expiry-value">—</b></div>
-        <div class="plus-status"><span id="plus-connection-label">Telegram Business</span><b id="plus-connection-value">Не подключён</b></div>
-        <div class="plus-muted" id="plus-description" style="margin-top:12px">События об удалении и редактировании приходят в личный чат с ботом. Сохраняется только содержимое сообщений, фактически доставленных боту, при активной подписке.</div>
-        <div class="plus-plans">
-            <button class="plus-plan" type="button" onclick="buyPlus('1m',this)"><b>1 месяц</b><span>200 ⭐</span></button>
-            <button class="plus-plan" type="button" onclick="buyPlus('6m',this)"><b>6 месяцев</b><span>1 000 ⭐</span></button>
-            <button class="plus-plan" type="button" onclick="buyPlus('12m',this)"><b>1 год</b><span>1 800 ⭐</span></button>
-        </div>
-        <div style="font-size:11px;color:#777;margin-top:9px" id="plus-renew-note">Разовая оплата. Автоматического списания нет; продление вручную.</div>
-        <div style="margin-top:15px;font-size:13px;font-weight:800" id="plus-connect-title">Как подключить Telegram Business</div>
-        <ol class="plus-connect-steps" id="plus-connect-steps"><li>Откройте Настройки Telegram → Telegram Business.</li><li>Перейдите в «Чат-боты» и добавьте @linkcheck_verify_bot.</li><li>Выберите чаты и разрешения, которые хотите предоставить боту.</li><li>После подключения бот сообщит о статусе в личном чате.</li></ol>
-        <div class="plus-muted" id="plus-retention-note">Данные сообщений хранятся до 30 дней. При отключении Business-подключения сохранённые сообщения этого подключения удаляются. Telegram не гарантирует доставку боту всех типов или исчезающих сообщений.</div>
-        <div class="plus-history" id="plus-payment-history"></div>
-        <button class="watch-action" type="button" style="margin-top:12px" onclick="loadPlusStatus()" id="plus-refresh-button">Обновить статус</button>
-    </div>
     <a class="privacy-link" id="privacy-link" href="/privacy?lang=ru" onclick="event.preventDefault();openPrivacyPolicy()" data-i18n="privacyPolicy">Политика конфиденциальности</a>
 </div>
 <div id="screen-watchlist" class="screen">
@@ -494,6 +479,27 @@ input::placeholder,textarea::placeholder{color:#666}
     <div class="nav-item" onclick="switchTab('watchlist',this)"><svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1zm1 2v13.6l5-2.85 5 2.85V5H7z"/></svg><span data-i18n="savedShort">Сохранено</span></div>
 </div>
 <div class="toast-container" id="toast-container"></div>
+<div id="plus-modal" class="plus-modal" role="dialog" aria-modal="true" aria-label="LINKCHECK PLUS">
+    <div class="plus-modal-header"><div class="plus-modal-title">LINKCHECK PLUS</div><button class="privacy-modal-close" type="button" onclick="closePlusModal()" aria-label="Close">×</button></div>
+    <div class="plus-modal-body">
+        <div class="card plus-panel" id="plus-panel">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px"><div><div style="font-size:17px;font-weight:900;letter-spacing:.5px">LINKCHECK PLUS</div><div class="plus-muted" id="plus-subtitle">Мониторинг изменений и удалений сообщений Telegram Business</div></div><span style="font-size:20px">✦</span></div>
+            <div class="plus-status"><span id="plus-status-label">Подписка</span><b id="plus-status-value">Загрузка...</b></div>
+            <div class="plus-status"><span id="plus-expiry-label">Действует до</span><b id="plus-expiry-value">—</b></div>
+            <div class="plus-status"><span id="plus-connection-label">Telegram Business</span><b id="plus-connection-value">Не подключён</b></div>
+            <div class="plus-muted" id="plus-description" style="margin-top:12px">События об удалении и редактировании приходят в личный чат с ботом. Сохраняется только содержимое сообщений, фактически доставленных боту, при активной подписке.</div>
+            <div class="plus-plans" id="plus-plans"></div>
+            <button class="plus-trial-button" type="button" id="plus-trial-button" onclick="claimPlusTrial()" style="display:none">Активировать тестовый доступ на 3 дня · 0 ⭐</button>
+            <div style="font-size:11px;color:#777;margin-top:9px" id="plus-renew-note">Разовая оплата. Автоматического списания нет; продление вручную.</div>
+            <div style="margin-top:15px;font-size:13px;font-weight:800" id="plus-connect-title">Как подключить Telegram Business</div>
+            <ol class="plus-connect-steps" id="plus-connect-steps"><li>Откройте Настройки Telegram → Telegram Business.</li><li>Перейдите в «Чат-боты» и добавьте @linkcheck_verify_bot.</li><li>Выберите чаты и разрешения, которые хотите предоставить боту.</li><li>После подключения бот сообщит о статусе в личном чате.</li></ol>
+            <div class="plus-muted" id="plus-retention-note">Данные сообщений хранятся до 30 дней. При отключении Business-подключения сохранённые сообщения этого подключения удаляются. Telegram не гарантирует доставку боту всех типов или исчезающих сообщений.</div>
+            <div class="plus-history" id="plus-payment-history"></div>
+            <button class="watch-action" type="button" style="margin-top:12px" onclick="loadPlusStatus()" id="plus-refresh-button">Обновить статус</button>
+        </div>
+        <div class="plus-admin-box" id="plus-admin-box" style="display:none"><div style="font-size:13px;font-weight:850">Управление тарифами</div><div class="plus-muted" style="margin-top:5px">Изменение цены, длительности и скидки. Итоговая стоимость пересчитывается автоматически.</div><div id="plus-admin-plans"></div><div class="plus-admin-note">Настройки сохраняются на сервере в базе данных. Старые выставленные счета сохраняют первоначальную стоимость.</div></div>
+    </div>
+</div>
 <script>
 const tg=window.Telegram.WebApp;
 tg.ready();
@@ -685,6 +691,11 @@ Object.assign(translations.en,{
     historyStatus:'Statuses',historyTitle:'Title',historyLink:'Link',historyDescription:'Description',historyWebsite:'Website',historyTopic:'Topic',historyModeration:'Publication',historyOwnership:'Ownership'
 });
 
+Object.assign(translations.ru,{plusHomeCaption:'Дополнительные возможности · Подписка'});
+Object.assign(translations.en,{plusHomeCaption:'Advanced features · Subscription'});
+function openPlusModal(){const modal=document.getElementById('plus-modal');if(!modal)return;modal.classList.add('open');loadPlusStatus();}
+function closePlusModal(){const modal=document.getElementById('plus-modal');if(modal)modal.classList.remove('open');}
+
 function openPrivacyPolicy(){
     const modal=document.getElementById('privacy-modal');
     const frame=document.getElementById('privacy-frame');
@@ -814,7 +825,7 @@ function refreshCurrentScreen(){
     if(!active)return;
     if(active.id==='screen-home')loadRecent();
     else if(active.id==='screen-catalog')loadCatalog();
-    else if(active.id==='screen-profile'){loadMyProjects();loadPlusStatus();}
+    else if(active.id==='screen-profile'){loadMyProjects();}
     else if(active.id==='screen-watchlist')loadWatchlistScreen();
     else if(active.id==='screen-admin'){
         const tab=document.querySelector('.admin-tab.active');
@@ -1236,7 +1247,6 @@ function switchTab(id,el){
         pollProfileInterval=null;
         loadMyProjects(true);
         loadOwnerAnalytics();
-        loadPlusStatus();
         ownerAnalyticsInterval=setInterval(()=>{
             if(document.getElementById('screen-profile')?.classList.contains('active'))loadOwnerAnalytics();
         },15000);
@@ -2213,53 +2223,44 @@ function formatPlusDate(value){
     return date.toLocaleString(currentLanguage==='ru'?'ru-RU':'en-US',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 async function loadPlusStatus(){
-    const status=document.getElementById('plus-status-value');
-    if(!status)return;
+    const status=document.getElementById('plus-status-value');if(!status)return;
     try{
         const response=await fetch('/api/plus/status',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(12000)});
-        const data=await response.json();
-        if(!response.ok)throw new Error(data.error||'PLUS status unavailable');
+        const data=await response.json();if(!response.ok)throw new Error(data.error||'PLUS status unavailable');
+        window.linkcheckPlusPaymentsEnabled=!!data.payments_enabled;window.linkcheckPlusIsAdmin=!!data.is_admin;
         const sub=data.subscription;
-        window.linkcheckPlusPaymentsEnabled=!!data.payments_enabled;
-        document.querySelectorAll('.plus-plan').forEach(item=>item.disabled=!window.linkcheckPlusPaymentsEnabled);
-        const renewNote=document.getElementById('plus-renew-note');
-        if(renewNote&&!window.linkcheckPlusPaymentsEnabled)renewNote.textContent=currentLanguage==='ru'?'Покупка временно отключена до подтверждения возможности вывода Stars через Fragment.':'Purchases are paused until Stars withdrawal through Fragment is confirmed.';
-        status.textContent=sub?.active?(currentLanguage==='ru'?'Активна':'Active'):(currentLanguage==='ru'?'Не активна':'Inactive');
-        status.style.color=sub?.active?'#4ade80':'#aaa';
+        status.textContent=sub?.active?(currentLanguage==='ru'?'Активна':'Active'):(currentLanguage==='ru'?'Не активна':'Inactive');status.style.color=sub?.active?'#4ade80':'#aaa';
         document.getElementById('plus-expiry-value').textContent=sub?.active?formatPlusDate(sub.expires_at):'—';
-        const connected=!!data.business_connection?.connected;
-        document.getElementById('plus-connection-value').textContent=connected?(currentLanguage==='ru'?'Подключён':'Connected'):(currentLanguage==='ru'?'Не подключён':'Not connected');
-        document.getElementById('plus-connection-value').style.color=connected?'#4ade80':'#aaa';
-        const history=Array.isArray(data.payments)?data.payments:[];
-        const historyEl=document.getElementById('plus-payment-history');
-        historyEl.innerHTML=history.length?`<b>${currentLanguage==='ru'?'История оплат':'Payment history'}</b><br>`+history.map(item=>`${escapeHTML(formatPlusDate(item.paid_at))} · ${Number(item.amount_stars)} ⭐ · ${escapeHTML(({1:'1 месяц',6:'6 месяцев',12:'12 месяцев'})[Number(String(item.plan_code||'').replace('m',''))]||item.plan_code||'')}`).join('<br>'):(currentLanguage==='ru'?'Платежей пока нет':'No payments yet');
-    }catch(error){
-        console.error('LINKCHECK PLUS status error:',error);
-        status.textContent=currentLanguage==='ru'?'Недоступно':'Unavailable';
-    }
+        const connected=!!data.business_connection?.connected;const connectionEl=document.getElementById('plus-connection-value');connectionEl.textContent=connected?(currentLanguage==='ru'?'Подключён':'Connected'):(currentLanguage==='ru'?'Не подключён':'Not connected');connectionEl.style.color=connected?'#4ade80':'#aaa';
+        const plansEl=document.getElementById('plus-plans');const plans=data.plans||{};
+        const planOrder=['1m','6m','12m'];
+        plansEl.innerHTML=planOrder.filter(code=>plans[code]).map(code=>{const plan=plans[code];const title=escapeHTML(plan.title);const price=Number(plan.stars)||0;const old=Number(plan.base_stars)||price;const discount=Number(plan.discount_percent)||0;return `<button class="plus-plan" type="button" onclick="buyPlus('${code}',this)" ${!data.payments_enabled?'disabled':''}><b>${title}</b><span>${price.toLocaleString()} ⭐ ${discount?`<s>${old.toLocaleString()}</s> · −${discount}%`:''}</span></button>`}).join('');
+        const trialButton=document.getElementById('plus-trial-button');trialButton.style.display=data.trial_available?'block':'none';trialButton.disabled=!!sub?.active;trialButton.textContent=currentLanguage==='ru'?`Активировать тестовый доступ на ${Number(data.trial_days)||3} дня · 0 ⭐`:`Activate ${Number(data.trial_days)||3}-day trial · 0 ⭐`;
+        const renewNote=document.getElementById('plus-renew-note');if(renewNote)renewNote.textContent=data.payments_enabled?(currentLanguage==='ru'?'Разовая оплата Telegram Stars. Автоматического списания нет; продление вручную.':'One-time Telegram Stars payment. No automatic billing; renew manually.'):(currentLanguage==='ru'?'Покупка временно отключена администратором.':'Purchases are paused by the administrator.');
+        const history=Array.isArray(data.payments)?data.payments:[];const historyEl=document.getElementById('plus-payment-history');historyEl.innerHTML=history.length?`<b>${currentLanguage==='ru'?'История оплат':'Payment history'}</b><br>`+history.map(item=>`${escapeHTML(formatPlusDate(item.paid_at))} · ${Number(item.amount_stars)} ⭐ · ${escapeHTML(plans[item.plan_code]?.title||item.plan_code||'')}`).join('<br>'):(currentLanguage==='ru'?'Платежей пока нет':'No payments yet');
+        const adminBox=document.getElementById('plus-admin-box');adminBox.style.display=data.is_admin?'block':'none';if(data.is_admin)renderPlusAdminPlans(plans);
+    }catch(error){console.error('LINKCHECK PLUS status error:',error);status.textContent=currentLanguage==='ru'?'Недоступно':'Unavailable';}
+}
+function renderPlusAdminPlans(plans){
+    const target=document.getElementById('plus-admin-plans');if(!target)return;
+    const labels={'1m':'1 месяц','6m':'6 месяцев','12m':'1 год'};
+    target.innerHTML=['1m','6m','12m'].map(code=>{const p=plans[code];if(!p)return '';return `<div class="plus-admin-plan"><b>${labels[code]}</b><div class="plus-admin-grid"><label>Срок, дней<input type="number" min="1" max="3650" id="plus-days-${code}" value="${Number(p.days)}"></label><label>Базовая цена, ⭐<input type="number" min="1" max="1000000" id="plus-price-${code}" value="${Number(p.base_stars)}"></label><label>Скидка, %<input type="number" min="0" max="90" id="plus-discount-${code}" value="${Number(p.discount_percent)}"></label></div><div class="plus-muted">Итог: ${Number(p.stars)} ⭐</div><button class="plus-admin-save" type="button" onclick="savePlusPlan('${code}',this)">Сохранить тариф</button></div>`}).join('');
+}
+async function savePlusPlan(code,button){
+    const payload={plan:code,days:document.getElementById(`plus-days-${code}`).value,base_stars:document.getElementById(`plus-price-${code}`).value,discount_percent:document.getElementById(`plus-discount-${code}`).value};button.disabled=true;
+    try{const response=await fetch('/api/admin/plus/update',{method:'POST',headers:getHeaders(),body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось сохранить тариф');showToast('Тариф обновлён');await loadPlusStatus();}catch(error){showToast(error.message||'Ошибка сохранения','error');}finally{button.disabled=false;}
+}
+async function claimPlusTrial(){
+    const button=document.getElementById('plus-trial-button');button.disabled=true;
+    try{const response=await fetch('/api/plus/trial',{method:'POST',headers:getHeaders(),body:JSON.stringify({}),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось активировать тестовый доступ');showToast(currentLanguage==='ru'?'Тестовый доступ активирован на 3 дня':'Trial activated for 3 days');await loadPlusStatus();}catch(error){showToast(error.message||'Ошибка активации','error');button.disabled=false;}
 }
 async function buyPlus(plan,button){
-    if(!window.linkcheckPlusPaymentsEnabled){showToast(currentLanguage==='ru'?'Оплата пока отключена до решения вопроса с выводом Fragment':'Payments are paused until Fragment withdrawal is confirmed','error');return}
-    if(!window.Telegram?.WebApp?.openInvoice){showToast(currentLanguage==='ru'?'Откройте Mini App внутри Telegram для оплаты':'Open the Mini App inside Telegram to pay','error');return}
-    const buttons=[...document.querySelectorAll('.plus-plan')];
-    buttons.forEach(item=>item.disabled=true);
-    try{
-        const response=await fetch('/api/plus/invoice',{method:'POST',headers:getHeaders(),body:JSON.stringify({plan}),signal:AbortSignal.timeout(15000)});
-        const data=await response.json();
-        if(!response.ok||!data.invoice_url)throw new Error(data.error||'Не удалось создать счёт');
-        window.Telegram.WebApp.openInvoice(data.invoice_url,(invoiceStatus)=>{
-            buttons.forEach(item=>item.disabled=false);
-            if(invoiceStatus==='paid'){
-                showToast(currentLanguage==='ru'?'Оплата принята. Активируем подписку...':'Payment received. Activating subscription...');
-                setTimeout(loadPlusStatus,1200);
-            }else if(invoiceStatus==='failed'){
-                showToast(currentLanguage==='ru'?'Платёж не прошёл':'Payment failed','error');
-            }
-        });
-    }catch(error){
-        buttons.forEach(item=>item.disabled=false);
-        showToast(error.message||'Ошибка оплаты','error');
-    }
+    if(!window.linkcheckPlusPaymentsEnabled){showToast(currentLanguage==='ru'?'Покупка временно отключена':'Purchases are disabled','error');return;}
+    if(!window.Telegram?.WebApp?.openInvoice){showToast(currentLanguage==='ru'?'Откройте Mini App внутри Telegram для оплаты':'Open the Mini App inside Telegram to pay','error');return;}
+    const buttons=[...document.querySelectorAll('.plus-plan')];buttons.forEach(item=>item.disabled=true);
+    try{const response=await fetch('/api/plus/invoice',{method:'POST',headers:getHeaders(),body:JSON.stringify({plan}),signal:AbortSignal.timeout(15000)});const data=await response.json();if(!response.ok||!data.invoice_url)throw new Error(data.error||'Не удалось создать счёт');
+        window.Telegram.WebApp.openInvoice(data.invoice_url,(invoiceStatus)=>{buttons.forEach(item=>item.disabled=false);if(invoiceStatus==='paid'){showToast(currentLanguage==='ru'?'Оплата принята. Подписка активируется после подтверждения Telegram.':'Payment received. Subscription activates after Telegram confirmation.');setTimeout(loadPlusStatus,1200);}else if(invoiceStatus==='failed'){showToast(currentLanguage==='ru'?'Платёж не прошёл':'Payment failed','error');}});
+    }catch(error){buttons.forEach(item=>item.disabled=false);showToast(error.message||'Ошибка оплаты','error');}
 }
 
 document.addEventListener('visibilitychange',()=>{
