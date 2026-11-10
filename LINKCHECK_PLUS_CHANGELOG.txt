@@ -1,55 +1,28 @@
-LINKCHECK PLUS — 10 November 2026
+LINKCHECK PLUS — FOUNDER SYNC / ANALYTICS FIX
+10.11.2026
 
-WHAT CHANGED
-1. Watchlist / favourites
-   - Authenticated Telegram users can save and remove approved projects.
-   - Saved projects are stored per Telegram ID in SQLite.
+BACKEND main.py
+- FOUNDER_PROFILE_CACHE_TTL: 300 -> 60 секунд.
+- FOUNDER_AVATAR_CACHE_TTL: 120 секунд.
+- Синхронизация имени, username и collectible emoji status по постоянному Telegram ID.
+- Загрузка фото профиля через Telethon с атомарной записью в DATA_DIR.
+- Загрузка collectible custom emoji document через messages.getCustomEmojiDocuments, получение TGS, распаковка GZIP, проверка Lottie и постоянный кэш.
+- Корректная обработка смены/удаления collectible status.
+- Контроль no-store для API основателя и статистики владельца.
+- На запуске выполняется первоначальная синхронизация профиля, если Telethon session подключена.
 
-2. Change history and notifications
-   - The backend keeps a snapshot of public project-card fields.
-   - A background task checks changes at a configurable interval (default 60 seconds; minimum 30 seconds, maximum 900 seconds).
-   - Changes are added to project history and in-app notification inboxes for watchers and project owners.
-   - The Mini App shows unread notifications and allows marking one or all as read.
-   - Notifications are in-app; this release does not send Telegram direct messages or push notifications.
+FRONTEND miniapp.html
+- Автоматическое обновление основателя каждые 60 секунд.
+- Актуализация username, display name, ссылок, avatar cache-buster и gift document id.
+- Повторная попытка загрузки gift animation после временной ошибки.
+- Статистика владельца обновляется каждые 15 секунд, пока открыт экран профиля, и после возврата в приложение.
+- Дедупликация запросов аналитики и no-store для fetch.
+- В интерфейсе статистики объяснено, что учитываются переходы других пользователей из LINKCHECK.
 
-3. Catalog topics
-   - Added topic taxonomy: News & Media, Finance & Banking, Government Services, Education, Technology, Shopping & Marketplaces, Entertainment, Other.
-   - Topic can be selected when submitting or editing a project and filtered in the catalog.
-   - Old clients that omit the topic field do not erase an existing topic.
-
-4. Project history
-   - Public history endpoint exposes only changed field names and timestamps for approved projects.
-   - Historical JSON payloads remain server-side and are not returned by the public endpoint.
-
-5. Owner analytics
-   - Owner dashboard shows project count, catalog outbound visits, visits over the last 7 days, reports, pending reports and pending verification requests.
-   - A viewer's repeated outbound clicks to the same project count at most once per UTC day.
-   - Owners' own clicks are not counted.
-
-6. Privacy
-   - Updated Russian and English privacy policy to disclose watchlist, in-app notifications, public change history and aggregated outbound-visit analytics.
-
-PRESERVED
-- Existing catalog, checking, project submissions, moderation, reports, ownership review, OFFICIAL RESOURCE review, Telegram Verified and LINKCHECK badge logic remain in the source tree.
-- Database changes are additive CREATE TABLE / CREATE INDEX statements. No existing project/user tables are dropped or recreated by these additions.
-
-TESTS PERFORMED
-- Python syntax check: passed.
-- Inline JavaScript syntax check with Node.js: passed.
-- SQLite integration smoke test: passed for idempotent initialization, watchlist add/remove, change notifications, read state, change history, unique visit counting, owner analytics, and compatibility with edit requests that omit topic.
-
-LIMITATIONS
-- This is a source-based best-effort release, not a live Bothost deployment test.
-- Visit analytics counts authenticated catalog outbound clicks, not actual Telegram channel views, member growth, reach or unique lifetime people.
-- The change monitor runs inside the single application process. Keep only one running instance using the same SQLite database and Telethon session.
-
-
-UI REDESIGN — 10.11.2026
-- Удалён блок «Ваш LINKCHECK» с главной страницей, включая счётчики избранного и уведомлений.
-- Подарок основателя снова отображается рядом с username; при недоступности Lottie-анимации показывается статичная иконка подарка.
-- Блок статистики владельца скрыт, пока API не подтвердит наличие хотя бы одного проекта.
-- Кнопка добавления в избранное в каталоге заменена на компактную иконку закладки с состоянием сохранения.
-- Вкладка переоформлена как лаконичное «Избранное»: компактные строки проектов, краткая метаинформация, встроенная кнопка снятия закладки.
-- Из карточек удалена кнопка истории изменений; обработчик и пользовательские подписи истории удалены из Mini App.
-- Уведомления отображаются компактным отдельным блоком только при наличии записей.
-- Backend и схема SQLite для этого редизайна не менялись.
+Проверки:
+- python -m py_compile main.py — PASS.
+- JavaScript node --check — PASS.
+- AST isolated test: Telegram gift document -> GZIP/TGS -> Lottie JSON -> disk + memory cache — PASS.
+- AST isolated test: download founder avatar + atomic cache + TTL — PASS.
+- SQLite test: один viewer на проект в UTC-день, owner self-view excluded — PASS.
+- Live Telegram API / live Bothost deployment — не выполнялись (нет пользовательской Telethon session и доступа к хостингу).

@@ -287,7 +287,7 @@ input::placeholder,textarea::placeholder{color:#666}
     <div class="founder-card">
         <div class="founder-kicker" data-i18n="founderLabel">СОЗДАТЕЛЬ LINKCHECK</div>
         <a class="founder-profile" id="founder-profile-link" href="https://t.me/nifort" target="_blank" rel="noopener noreferrer">
-            <img class="founder-avatar" id="founder-avatar" alt="nifort" style="display:none" onerror="this.style.display='none'">
+            <img class="founder-avatar" id="founder-avatar" alt="nifort" style="display:none" onerror="this.style.display='none';founderProfileSignature=null">
             <div class="founder-info">
                 <div class="founder-name" id="founder-name">nifort</div>
                 <div class="founder-role" data-i18n="founderRole">Основатель проекта</div>
@@ -483,6 +483,8 @@ let hasRequested=false;
 let pollAdminInterval=null;
 let pollProfileInterval=null;
 let pollAddInterval=null;
+let ownerAnalyticsInterval=null;
+let ownerAnalyticsRequest=null;
 let founderRefreshInterval=null;
 let founderGiftAnimation=null;
 let founderGiftDocumentId=null;
@@ -631,7 +633,7 @@ Object.assign(translations.ru,{
     savedRemoved:'Проект удалён из избранного',watchlistLoadError:'Не удалось загрузить избранное',
     notificationsLoadError:'Не удалось загрузить уведомления',notificationsUnread:'Непрочитанных уведомлений',
     notificationsAllRead:'Уведомления отмечены прочитанными',notificationReadError:'Не удалось обновить уведомления',
-    ownerAnalyticsTitle:'Статистика владельца',ownerAnalyticsSubtitle:'Просмотры и обращения по вашим проектам',
+    ownerAnalyticsTitle:'Статистика владельца',ownerAnalyticsSubtitle:'Переходы других пользователей из LINKCHECK · один пользователь учитывается один раз в сутки',
     ownerViews:'Переходы всего',ownerViews7d:'Переходы за 7 дней',ownerReports:'Жалобы',ownerPendingReports:'Ожидают рассмотрения',
     ownerOwnershipRequests:'Проверки владения',ownerOfficialRequests:'OFFICIAL RESOURCE',ownerProjects:'Ваши проекты',
     ownerNoProjects:'У вас пока нет проектов для статистики.',ownerAnalyticsError:'Не удалось загрузить статистику',
@@ -649,7 +651,7 @@ Object.assign(translations.en,{
     watchlistLoadError:'Could not load saved projects',notificationsLoadError:'Could not load notifications',
     notificationsUnread:'Unread notifications',notificationsAllRead:'Notifications marked as read',
     notificationReadError:'Could not update notifications',ownerAnalyticsTitle:'Owner analytics',
-    ownerAnalyticsSubtitle:'Views and reports for your projects',ownerViews:'Total outbound visits',ownerViews7d:'Outbound visits · 7 days',
+    ownerAnalyticsSubtitle:'LINKCHECK visits from other users · each user is counted once per day',ownerViews:'Total outbound visits',ownerViews7d:'Outbound visits · 7 days',
     ownerReports:'Reports',ownerPendingReports:'Pending review',ownerOwnershipRequests:'Ownership reviews',
     ownerOfficialRequests:'OFFICIAL RESOURCE',ownerProjects:'Your projects',
     ownerNoProjects:'You do not have projects to display analytics for.',ownerAnalyticsError:'Could not load analytics',
@@ -1077,7 +1079,7 @@ async function loadFounderGift(documentId){
     if(!container)return;
     if(!documentId){stopFounderGiftAnimation();founderGiftFailedDocumentId=null;return}
     const normalizedId=String(documentId);
-    if(normalizedId===String(founderGiftDocumentId))return;
+    if(normalizedId===String(founderGiftDocumentId)&&founderGiftFailedDocumentId!==normalizedId)return;
     if(founderGiftRequest)return founderGiftRequest;
     if(founderGiftFailedDocumentId===normalizedId&&Date.now()-founderGiftFailedAt<300000){
         container.innerHTML=founderGiftFallbackMarkup();container.style.display='inline-flex';return;
@@ -1101,7 +1103,7 @@ async function loadFounderGift(documentId){
         }catch(error){
             console.warn('Founder gift animation error; using static icon:',error);
             container.innerHTML=founderGiftFallbackMarkup();container.style.display='inline-flex';
-            founderGiftDocumentId=normalizedId;
+            founderGiftDocumentId=null;
             founderGiftFailedDocumentId=normalizedId;
             founderGiftFailedAt=Date.now();
         }finally{
@@ -1115,7 +1117,7 @@ async function refreshFounderProfile(){
     if(founderProfileRequest)return founderProfileRequest;
     founderProfileRequest=(async()=>{
         try{
-            const response=await fetch('/api/founder',{cache:'default'});
+            const response=await fetch('/api/founder',{cache:'no-store'});
             if(!response.ok)throw new Error('Founder profile unavailable');
             const data=await response.json();
             const profileLink=document.getElementById('founder-profile-link');
@@ -1125,17 +1127,19 @@ async function refreshFounderProfile(){
             const username=document.getElementById('founder-username');
             if(!profileLink||!contactLink||!avatar||!name||!username)return;
 
-            const actualUsername=String(data.username||'nifort').replace(/^@/,'');
+            const actualUsername=String(data.username||'').replace(/^@/,'');
             const displayName=data.display_name||[data.first_name,data.last_name].filter(Boolean).join(' ')||actualUsername||String(data.id||'6182269112');
-            const profileUrl=data.profile_url||'https://t.me/'+actualUsername;
+            const profileUrl=data.profile_url||(actualUsername?'https://t.me/'+actualUsername:'tg://user?id='+String(data.id||'6182269112'));
             const usernameText=actualUsername?'@'+actualUsername:'';
-            // Подарок не влияет на URL аватара и не вызывает его повторную загрузку.
-            const signature=[data.id,displayName,actualUsername,profileUrl].join('|');
+            // avatar_version changes only when the server's cached Telegram photo changes.
+            const avatarVersion=String(data.avatar_version||'0');
+            const signature=[data.id,displayName,actualUsername,profileUrl,avatarVersion].join('|');
             profileLink.href=profileUrl;contactLink.href=profileUrl;
             name.textContent=displayName;username.textContent=usernameText;
+            avatar.alt=displayName;
             if(signature!==founderProfileSignature){
                 avatar.style.display='block';
-                avatar.src='/api/founder/avatar?v='+encodeURIComponent(signature);
+                avatar.src='/api/founder/avatar?v='+encodeURIComponent(avatarVersion||signature);
                 founderProfileSignature=signature;
             }
             if(data.has_collectible&&data.gift_document_id){
@@ -1182,7 +1186,8 @@ function switchTab(id,el){
     document.querySelectorAll('.screen').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
     document.getElementById('screen-'+id).classList.add('active');el.classList.add('active');
-    clearInterval(pollAdminInterval);clearInterval(pollProfileInterval);clearInterval(pollAddInterval);
+    clearInterval(pollAdminInterval);clearInterval(pollProfileInterval);clearInterval(pollAddInterval);clearInterval(ownerAnalyticsInterval);
+    ownerAnalyticsInterval=null;
     if(id==='home'){loadStats();loadRecent()}
     if(id==='catalog')loadCatalog();
     if(id==='watchlist')loadWatchlistScreen();
@@ -1193,6 +1198,9 @@ function switchTab(id,el){
         pollProfileInterval=null;
         loadMyProjects(true);
         loadOwnerAnalytics();
+        ownerAnalyticsInterval=setInterval(()=>{
+            if(document.getElementById('screen-profile')?.classList.contains('active'))loadOwnerAnalytics();
+        },15000);
     }
     if(id==='admin'){
         loadAdminRequests();
@@ -2109,45 +2117,59 @@ async function markAllNotificationsRead(){
 }
 
 async function loadOwnerAnalytics(){
+    if(ownerAnalyticsRequest)return ownerAnalyticsRequest;
     const target=document.getElementById('owner-analytics-content');
     const card=document.getElementById('owner-analytics');
     if(!target||!card)return;
-    card.style.display='none';
-    target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
-    try{
-        const response=await fetch('/api/owner/analytics',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
-        let data={};try{data=await response.json()}catch(error){}
-        if(!response.ok)throw new Error(data.error||t('ownerAnalyticsError'));
-        if(!Number(data.projects_count||0)){
-            card.style.display='none';
-            target.innerHTML='';
-            return;
-        }
-        card.style.display='block';
-        const metrics=[
-            [data.total_views,t('ownerViews')],[data.views_7d,t('ownerViews7d')],
-            [data.reports,t('ownerReports')],[data.pending_reports,t('ownerPendingReports')],
-            [data.ownership_requests,t('ownerOwnershipRequests')],[data.official_requests,t('ownerOfficialRequests')]
-        ];
-        const daily=Array.isArray(data.daily)?data.daily:[];
-        const max=Math.max(1,...daily.map(day=>Number(day.views||0)));
-        const bars=daily.map(day=>{
-            const value=Number(day.views||0);
-            const height=Math.max(3,Math.round(value/max*58));
-            const label=String(day.day||'').slice(5);
-            return `<div class="owner-day" title="${escapeHTML(day.day||'')}: ${value}"><span style="font-size:9px;color:#aaa">${value}</span><div class="owner-day-bar" style="height:${height}px"></div><span class="owner-day-label">${escapeHTML(label)}</span></div>`;
-        }).join('');
-        const projects=(Array.isArray(data.projects)?data.projects:[]).map(project=>
-            `<div class="owner-project-row"><div><b>${escapeHTML(project.title||project.link||'')}</b><div style="color:#777;margin-top:4px">${escapeHTML(project.link||'')}</div></div><span>${Number(project.total_views||0)} ${escapeHTML(t('ownerProjectViews'))}<br>${Number(project.views_7d||0)} / 7d</span></div>`
-        ).join('');
-        target.innerHTML=`<div class="owner-metrics">${metrics.map(([value,label])=>`<div class="owner-metric"><strong>${Number(value||0)}</strong><span>${escapeHTML(label)}</span></div>`).join('')}</div><div style="font-size:12px;color:#aaa;margin-top:17px">${escapeHTML(t('ownerViewsDaily'))}</div><div class="owner-daily">${bars}</div><div style="font-size:12px;color:#aaa;margin:16px 0 4px">${escapeHTML(t('ownerProjects'))} · ${Number(data.projects_count)}</div>${projects}`;
-    }catch(error){
-        console.error('Owner analytics error:',error);
+    const hasPreviousData=target.dataset.loaded==='1'&&!!target.innerHTML;
+    if(!hasPreviousData){
         card.style.display='none';
-        target.innerHTML='';
+        target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
     }
+    ownerAnalyticsRequest=(async()=>{
+        try{
+            const response=await fetch('/api/owner/analytics',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+            let data={};try{data=await response.json()}catch(error){}
+            if(!response.ok)throw new Error(data.error||t('ownerAnalyticsError'));
+            if(!Number(data.projects_count||0)){
+                card.style.display='none';
+                target.innerHTML='';
+                target.dataset.loaded='1';
+                return;
+            }
+            card.style.display='block';
+            const metrics=[
+                [data.total_views,t('ownerViews')],[data.views_7d,t('ownerViews7d')],
+                [data.reports,t('ownerReports')],[data.pending_reports,t('ownerPendingReports')],
+                [data.ownership_requests,t('ownerOwnershipRequests')],[data.official_requests,t('ownerOfficialRequests')]
+            ];
+            const daily=Array.isArray(data.daily)?data.daily:[];
+            const max=Math.max(1,...daily.map(day=>Number(day.views||0)));
+            const bars=daily.map(day=>{
+                const value=Number(day.views||0);
+                const height=Math.max(3,Math.round(value/max*58));
+                const label=String(day.day||'').slice(5);
+                return `<div class="owner-day" title="${escapeHTML(day.day||'')}: ${value}"><span style="font-size:9px;color:#aaa">${value}</span><div class="owner-day-bar" style="height:${height}px"></div><span class="owner-day-label">${escapeHTML(label)}</span></div>`;
+            }).join('');
+            const projects=(Array.isArray(data.projects)?data.projects:[]).map(project=>
+                `<div class="owner-project-row"><div><b>${escapeHTML(project.title||project.link||'')}</b><div style="color:#777;margin-top:4px">${escapeHTML(project.link||'')}</div></div><span>${Number(project.total_views||0)} ${escapeHTML(t('ownerProjectViews'))}<br>${Number(project.views_7d||0)} / 7d</span></div>`
+            ).join('');
+            const updatedAt=new Date().toLocaleTimeString(currentLanguage==='ru'?'ru-RU':'en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+            target.innerHTML=`<div class="owner-metrics">${metrics.map(([value,label])=>`<div class="owner-metric"><strong>${Number(value||0)}</strong><span>${escapeHTML(label)}</span></div>`).join('')}</div><div style="font-size:12px;color:#aaa;margin-top:17px">${escapeHTML(t('ownerViewsDaily'))}</div><div class="owner-daily">${bars}</div><div style="font-size:12px;color:#aaa;margin:16px 0 4px">${escapeHTML(t('ownerProjects'))} · ${Number(data.projects_count)}</div>${projects}<div style="margin-top:10px;text-align:right;color:#666;font-size:10px">${currentLanguage==='ru'?'Обновлено':'Updated'} · ${escapeHTML(updatedAt)}</div>`;
+            target.dataset.loaded='1';
+        }catch(error){
+            console.error('Owner analytics error:',error);
+            if(!hasPreviousData){card.style.display='none';target.innerHTML='';}
+        }finally{
+            ownerAnalyticsRequest=null;
+        }
+    })();
+    return ownerAnalyticsRequest;
 }
 
+document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden&&document.getElementById('screen-profile')?.classList.contains('active'))loadOwnerAnalytics();
+});
 setLanguage(currentLanguage);
 initUser().then(()=>{loadStats();loadRecent()});
 refreshFounderProfile();

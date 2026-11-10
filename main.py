@@ -137,8 +137,8 @@ telegram_mtproto_lock = asyncio.Lock()
 # НАСТРОЙКИ КЭША ПРОФИЛЯ СОЗДАТЕЛЯ
 # ============================================================
 
-FOUNDER_PROFILE_CACHE_TTL = 300
-FOUNDER_AVATAR_CACHE_TTL = 300
+FOUNDER_PROFILE_CACHE_TTL = 60
+FOUNDER_AVATAR_CACHE_TTL = 120
 FOUNDER_GIFT_CACHE_TTL = 3600
 
 if not BOT_TOKEN:
@@ -166,6 +166,7 @@ founder_profile_cache = None
 founder_profile_cache_time = 0
 founder_profile_lock = asyncio.Lock()
 founder_avatar_lock = asyncio.Lock()
+founder_avatar_cache_time = 0
 founder_gift_cache = {}
 founder_gift_lock = asyncio.Lock()
 
@@ -178,6 +179,11 @@ def founder_profile_cache_path():
 def founder_gift_directory():
     """Каталог постоянного хранения Lottie-анимаций коллекционного подарка."""
     return os.path.join(DATA_DIR, "founder_gifts")
+
+
+def founder_avatar_path():
+    """Постоянный кэш актуальной фотографии создателя."""
+    return os.path.join(DATA_DIR, "founder_nifort.jpg")
 
 
 def load_founder_identity_from_telethon_session():
@@ -212,7 +218,7 @@ def load_founder_identity_from_telethon_session():
             bool(display_name)
         )
         return {
-            "username": username or FOUNDER_FALLBACK_USERNAME,
+            "username": username,
             "display_name": display_name
         }
     except Exception as exc:
@@ -272,7 +278,10 @@ def load_founder_profile_cache_from_disk():
             with open(path, "r", encoding="utf-8") as file:
                 stored = json.load(file)
             if isinstance(stored, dict) and int(stored.get("id", 0)) == FOUNDER_ID:
-                username = str(stored.get("username") or FOUNDER_FALLBACK_USERNAME).strip().lstrip("@")
+                username = (
+                    str(stored.get("username") or "").strip().lstrip("@")
+                    if "username" in stored else FOUNDER_FALLBACK_USERNAME
+                )
                 first_name = str(stored.get("first_name") or "").strip()
                 last_name = str(stored.get("last_name") or "").strip()
                 display_name = str(stored.get("display_name") or "").strip()
@@ -288,7 +297,10 @@ def load_founder_profile_cache_from_disk():
                     "last_name": last_name,
                     "display_name": display_name,
                     "username": username,
-                    "profile_url": "https://t.me/" + username,
+                    "profile_url": (
+                        "https://t.me/" + username if username
+                        else "tg://user?id=" + str(FOUNDER_ID)
+                    ),
                     "has_collectible": bool(stored.get("has_collectible") and gift_document_id),
                     "gift_document_id": gift_document_id,
                     "gift_title": stored.get("gift_title")
@@ -311,39 +323,34 @@ def load_founder_profile_cache_from_disk():
             "last_name": "",
             "display_name": display_name,
             "username": username,
-            "profile_url": "https://t.me/" + username,
+            "profile_url": (
+                "https://t.me/" + username if username
+                else "tg://user?id=" + str(FOUNDER_ID)
+            ),
             "has_collectible": False,
             "gift_document_id": None,
             "gift_title": None
         }
-    elif profile is not None and identity:
-        if identity.get("username"):
-            profile["username"] = identity["username"]
-            profile["profile_url"] = "https://t.me/" + identity["username"]
-        if identity.get("display_name") and not (profile.get("first_name") or profile.get("last_name")):
-            profile["display_name"] = identity["display_name"]
-
     # Даже если JSON профиля ещё не создавался, ID можно восстановить из ранее
     # скачанной анимации. Это особенно важно во время Telegram FloodWait.
     cached_document_id = find_cached_founder_gift_document_id()
-    if cached_document_id:
-        if profile is None:
-            username = identity["username"] if identity else FOUNDER_FALLBACK_USERNAME
-            display_name = identity["display_name"] if identity and identity.get("display_name") else username
-            profile = {
-                "id": FOUNDER_ID,
-                "first_name": "",
-                "last_name": "",
-                "display_name": display_name,
-                "username": username,
-                "profile_url": "https://t.me/" + username,
-                "has_collectible": True,
-                "gift_document_id": cached_document_id,
-                "gift_title": None
-            }
-        elif not profile.get("gift_document_id"):
-            profile["has_collectible"] = True
-            profile["gift_document_id"] = cached_document_id
+    if cached_document_id and profile is None:
+        username = identity["username"] if identity else FOUNDER_FALLBACK_USERNAME
+        display_name = identity["display_name"] if identity and identity.get("display_name") else (username or str(FOUNDER_ID))
+        profile = {
+            "id": FOUNDER_ID,
+            "first_name": "",
+            "last_name": "",
+            "display_name": display_name,
+            "username": username,
+            "profile_url": (
+                "https://t.me/" + username if username
+                else "tg://user?id=" + str(FOUNDER_ID)
+            ),
+            "has_collectible": True,
+            "gift_document_id": cached_document_id,
+            "gift_title": None
+        }
 
     if profile is not None:
         save_founder_profile_cache_to_disk(profile)
@@ -354,14 +361,17 @@ def save_founder_profile_cache_to_disk(profile):
     """Атомарно сохраняет только подтверждённый профиль основателя."""
     if not isinstance(profile, dict) or int(profile.get("id", 0)) != FOUNDER_ID:
         return
-    username = str(profile.get("username") or FOUNDER_FALLBACK_USERNAME).strip().lstrip("@")
+    username = str(profile.get("username") or "").strip().lstrip("@")
     payload = {
         "id": FOUNDER_ID,
         "first_name": str(profile.get("first_name") or ""),
         "last_name": str(profile.get("last_name") or ""),
-        "display_name": str(profile.get("display_name") or username),
+        "display_name": str(profile.get("display_name") or username or FOUNDER_ID),
         "username": username,
-        "profile_url": "https://t.me/" + username,
+        "profile_url": (
+            "https://t.me/" + username if username
+            else "tg://user?id=" + str(FOUNDER_ID)
+        ),
         "has_collectible": bool(profile.get("has_collectible") and profile.get("gift_document_id")),
         "gift_document_id": int(profile["gift_document_id"]) if profile.get("gift_document_id") else None,
         "gift_title": profile.get("gift_title")
@@ -2087,6 +2097,7 @@ def is_collectible_status(status):
 
 
 async def get_founder_entity(force=False):
+    """Получает свежий профиль по постоянному Telegram ID, а не по старому username."""
     global founder_entity_cache, founder_entity_cache_time
     if not tg_ready or tg_client is None or functions is None:
         if founder_entity_cache is not None and getattr(founder_entity_cache, "id", None) == FOUNDER_ID:
@@ -2109,16 +2120,45 @@ async def get_founder_entity(force=False):
             raise RuntimeError(f"Telegram FloodWait active: {math.ceil(remaining)} seconds")
 
         try:
-            entity = await run_mtproto_operation(
-                lambda: tg_client.get_entity(FOUNDER_FALLBACK_USERNAME),
-                "Founder profile resolve"
-            )
-            if getattr(entity, "id", None) != FOUNDER_ID:
+            entity = None
+            resolve_errors = []
+
+            # Telethon session already knows the stable numeric ID and access hash.
+            # Resolve by ID first so a username change does not break the profile.
+            try:
+                input_peer = await tg_client.get_input_entity(FOUNDER_ID)
+                entity = await run_mtproto_operation(
+                    lambda: tg_client.get_entity(input_peer),
+                    "Founder profile resolve by ID"
+                )
+            except Exception as exc:
+                resolve_errors.append(exc)
+                cached_username = ""
+                if isinstance(founder_profile_cache, dict):
+                    cached_username = str(founder_profile_cache.get("username") or "").strip().lstrip("@")
+                candidates = []
+                for candidate in (cached_username, FOUNDER_FALLBACK_USERNAME):
+                    if candidate and candidate not in candidates:
+                        candidates.append(candidate)
+                for candidate in candidates:
+                    try:
+                        candidate_entity = await run_mtproto_operation(
+                            lambda candidate=candidate: tg_client.get_entity(candidate),
+                            "Founder profile resolve by username"
+                        )
+                        if getattr(candidate_entity, "id", None) == FOUNDER_ID:
+                            entity = candidate_entity
+                            break
+                        resolve_errors.append(RuntimeError("Resolved username does not match founder ID"))
+                    except Exception as candidate_exc:
+                        resolve_errors.append(candidate_exc)
+
+            if entity is None or getattr(entity, "id", None) != FOUNDER_ID:
+                if resolve_errors:
+                    raise RuntimeError("Could not resolve founder by ID or cached username") from resolve_errors[-1]
                 raise RuntimeError("Username не соответствует ID создателя")
 
-            original_entity = entity
-            original_status = getattr(original_entity, "emoji_status", None)
-            selected_entity = original_entity
+            selected_entity = entity
             try:
                 full = await run_mtproto_operation(
                     lambda: tg_client(functions.users.GetFullUserRequest(id=entity)),
@@ -2130,19 +2170,14 @@ async def get_founder_entity(force=False):
                     None
                 )
                 if fresh_entity is not None:
-                    fresh_status = getattr(fresh_entity, "emoji_status", None)
-                    if is_collectible_status(original_status):
-                        selected_entity = original_entity
-                    elif is_collectible_status(fresh_status) or fresh_status is not None:
-                        selected_entity = fresh_entity
-                    else:
-                        selected_entity = original_entity
+                    # The GetFullUser response is the newest source of username,
+                    # profile photo pointer and emoji_status. In particular, it
+                    # must be allowed to report that the old collectible is gone.
+                    selected_entity = fresh_entity
                     logging.info(
-                        "Founder profile loaded: id=%s username=%s original_status=%s fresh_status=%s selected_status=%s",
+                        "Founder fresh profile loaded: id=%s username=%s status=%s",
                         FOUNDER_ID,
                         getattr(selected_entity, "username", None),
-                        type(original_status).__name__,
-                        type(fresh_status).__name__,
                         type(getattr(selected_entity, "emoji_status", None)).__name__
                     )
                 else:
@@ -2164,7 +2199,6 @@ async def get_founder_entity(force=False):
             if founder_entity_cache is not None and getattr(founder_entity_cache, "id", None) == FOUNDER_ID:
                 return founder_entity_cache
             raise
-
 
 def get_collectible_status(entity):
     status = getattr(entity, "emoji_status", None)
@@ -2193,11 +2227,14 @@ def get_collectible_status(entity):
 def build_founder_profile(entity):
     first_name = getattr(entity, "first_name", None) or ""
     last_name = getattr(entity, "last_name", None) or ""
-    username = getattr(entity, "username", None) or FOUNDER_FALLBACK_USERNAME
+    username = str(getattr(entity, "username", None) or "").strip().lstrip("@")
     display_name = " ".join(part for part in (first_name, last_name) if part).strip()
     if not display_name:
         display_name = username or str(FOUNDER_ID)
-    profile_url = "https://t.me/" + username if username else "tg://user?id=" + str(FOUNDER_ID)
+    profile_url = (
+        "https://t.me/" + username if username
+        else "tg://user?id=" + str(FOUNDER_ID)
+    )
     collectible = get_collectible_status(entity)
     return {
         "id": FOUNDER_ID,
@@ -2211,7 +2248,6 @@ def build_founder_profile(entity):
         "gift_title": collectible.get("title") if collectible else None
     }
 
-
 def build_founder_fallback_profile():
     username = FOUNDER_FALLBACK_USERNAME
     return {
@@ -2222,11 +2258,75 @@ def build_founder_fallback_profile():
     }
 
 
+async def refresh_founder_avatar(entity, force=False):
+    """Обновляет фото профиля из Telegram, не теряя последнюю рабочую копию при сбое."""
+    global founder_avatar_cache_time
+    if not tg_ready or tg_client is None or entity is None:
+        return False
+
+    avatar_path = founder_avatar_path()
+    os.makedirs(os.path.dirname(avatar_path), exist_ok=True)
+    async with founder_avatar_lock:
+        current_time = time.time()
+        if os.path.isfile(avatar_path):
+            try:
+                modified_at = os.path.getmtime(avatar_path)
+                if not force and current_time - modified_at < FOUNDER_AVATAR_CACHE_TTL:
+                    founder_avatar_cache_time = modified_at
+                    return True
+            except OSError:
+                pass
+
+        temporary_path = avatar_path + ".refresh.jpg"
+        try:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+            downloaded_path = await run_mtproto_operation(
+                lambda: tg_client.download_profile_photo(
+                    entity, file=temporary_path, download_big=True
+                ),
+                "Founder profile photo download"
+            )
+            candidate_path = downloaded_path if isinstance(downloaded_path, str) else temporary_path
+            if not candidate_path or not os.path.isfile(candidate_path):
+                founder_avatar_cache_time = current_time
+                return False
+            file_size = os.path.getsize(candidate_path)
+            if file_size <= 0 or file_size > 10 * 1024 * 1024:
+                raise ValueError("Founder avatar has an invalid size")
+
+            is_same = False
+            if os.path.isfile(avatar_path) and os.path.getsize(avatar_path) == file_size:
+                try:
+                    with open(avatar_path, "rb") as old_file, open(candidate_path, "rb") as new_file:
+                        is_same = old_file.read() == new_file.read()
+                except OSError:
+                    is_same = False
+            if is_same:
+                os.remove(candidate_path)
+            else:
+                os.replace(candidate_path, avatar_path)
+            founder_avatar_cache_time = os.path.getmtime(avatar_path) if os.path.isfile(avatar_path) else current_time
+            logging.info("Founder avatar cache refreshed; changed=%s", not is_same)
+            return os.path.isfile(avatar_path)
+        except Exception as exc:
+            logging.warning("Founder avatar refresh failed; keeping previous image: %s", exc)
+            founder_avatar_cache_time = current_time
+            return os.path.isfile(avatar_path)
+        finally:
+            for candidate in (temporary_path,):
+                try:
+                    if os.path.isfile(candidate):
+                        os.remove(candidate)
+                except OSError:
+                    pass
+
+
 async def get_founder_profile(force=False):
+    """Возвращает кэш профиля и автоматически обновляет его по TTL."""
     global founder_profile_cache, founder_profile_cache_time
 
     async with founder_profile_lock:
-        # Восстанавливаем последний подтверждённый профиль после каждого запуска.
         if founder_profile_cache is None:
             founder_profile_cache = load_founder_profile_cache_from_disk()
             if founder_profile_cache is not None:
@@ -2236,40 +2336,31 @@ async def get_founder_profile(force=False):
             time.time() - founder_profile_cache_time
             if founder_profile_cache is not None else None
         )
+        refresh_due = (
+            force or founder_profile_cache is None or cache_age is None
+            or cache_age >= FOUNDER_PROFILE_CACHE_TTL
+        )
+        if not refresh_due:
+            return founder_profile_cache
+
         remaining = telegram_flood_remaining()
-
-        # Обычная загрузка главной не должна вызывать ResolveUsername для
-        # профиля основателя. Профиль уже сохранён на диске; обновление только
-        # по явному force=True (публичный API такой параметр не принимает).
-        if not force:
-            if founder_profile_cache is None:
-                founder_profile_cache = build_founder_fallback_profile()
-                founder_profile_cache_time = time.time()
-            return founder_profile_cache
-        if founder_profile_cache is not None and remaining > 0:
-            return founder_profile_cache
-
-        # При FloodWait никогда не заменяем ранее сохранённые имя/подарок пустым fallback.
         if remaining > 0:
             if founder_profile_cache is not None:
                 return founder_profile_cache
-            if founder_entity_cache is not None and getattr(founder_entity_cache, "id", None) == FOUNDER_ID:
-                result = build_founder_profile(founder_entity_cache)
-                save_founder_profile_cache_to_disk(result)
-            else:
-                result = build_founder_fallback_profile()
-            founder_profile_cache = result
+            founder_profile_cache = build_founder_fallback_profile()
             founder_profile_cache_time = time.time()
-            return result
+            return founder_profile_cache
 
         try:
-            entity = await get_founder_entity()
+            entity = await get_founder_entity(force=True)
             result = build_founder_profile(entity)
+            # Profile identity/status and its avatar are refreshed as one cache cycle.
+            await refresh_founder_avatar(entity, force=force)
             founder_profile_cache = result
             founder_profile_cache_time = time.time()
             save_founder_profile_cache_to_disk(result)
             logging.info(
-                "Founder API profile: username=%s has_collectible=%s gift_document_id=%s",
+                "Founder profile refreshed: username=%s has_collectible=%s gift_document_id=%s",
                 result["username"], result["has_collectible"], result["gift_document_id"]
             )
             return result
@@ -2278,6 +2369,7 @@ async def get_founder_profile(force=False):
                 register_telegram_flood_wait(exc, "Founder API profile")
             logging.warning("Founder API profile could not be refreshed: %s", exc)
             if founder_profile_cache is not None:
+                founder_profile_cache_time = time.time()
                 return founder_profile_cache
             if founder_entity_cache is not None and getattr(founder_entity_cache, "id", None) == FOUNDER_ID:
                 result = build_founder_profile(founder_entity_cache)
@@ -2285,11 +2377,13 @@ async def get_founder_profile(force=False):
             else:
                 result = build_founder_fallback_profile()
             founder_profile_cache = result
-            founder_profile_cache_time = time.time()
+            # Retry a first-time fallback sooner when Telethon has not connected yet.
+            founder_profile_cache_time = time.time() - max(0, FOUNDER_PROFILE_CACHE_TTL - 30)
             return result
 
 
 async def get_founder_gift_animation(document_id):
+    """Читает сохранённую Lottie-анимацию или скачивает её из Telegram custom emoji API."""
     if not document_id:
         raise FileNotFoundError("Коллекционный документ не указан")
     document_id = int(document_id)
@@ -2303,19 +2397,65 @@ async def get_founder_gift_animation(document_id):
             return cached["data"]
 
         gift_dir = founder_gift_directory()
+        os.makedirs(gift_dir, exist_ok=True)
         animation_path = os.path.join(gift_dir, f"{document_id}.json")
-        if not os.path.isfile(animation_path):
-            raise FileNotFoundError("Локальная анимация коллекционного подарка не найдена")
+        animation_data = None
 
-        try:
-            with open(animation_path, "r", encoding="utf-8") as file:
-                animation_data = json.load(file)
-        except Exception as exc:
-            logging.warning("Founder gift disk cache is invalid: %s", exc)
-            raise FileNotFoundError("Локальная анимация коллекционного подарка повреждена") from exc
+        if os.path.isfile(animation_path):
+            try:
+                with open(animation_path, "r", encoding="utf-8") as file:
+                    candidate = json.load(file)
+                if isinstance(candidate, dict) and isinstance(candidate.get("layers"), list):
+                    animation_data = candidate
+            except Exception as exc:
+                logging.warning("Founder gift disk cache is invalid; trying Telegram again: %s", exc)
 
-        if not isinstance(animation_data, dict) or not isinstance(animation_data.get("layers"), list):
-            raise FileNotFoundError("Локальная анимация коллекционного подарка имеет неверный формат")
+        if animation_data is None:
+            if not tg_ready or tg_client is None or functions is None:
+                raise FileNotFoundError("Telegram client is not ready to download the collectible animation")
+            try:
+                request_type = getattr(getattr(functions, "messages", None), "GetCustomEmojiDocumentsRequest", None)
+                if request_type is None:
+                    raise RuntimeError("Telethon does not expose GetCustomEmojiDocumentsRequest")
+                documents = await run_mtproto_operation(
+                    lambda: tg_client(request_type(document_id=[document_id])),
+                    "Founder collectible document resolve"
+                )
+                document = next(iter(documents or []), None)
+                if document is None:
+                    raise FileNotFoundError("Telegram did not return the collectible document")
+                raw_data = await run_mtproto_operation(
+                    lambda: tg_client.download_media(document, bytes),
+                    "Founder collectible animation download"
+                )
+                if not isinstance(raw_data, (bytes, bytearray)) or not raw_data:
+                    raise FileNotFoundError("Telegram returned an empty collectible animation")
+                if len(raw_data) > 10 * 1024 * 1024:
+                    raise ValueError("Collectible animation is too large")
+
+                try:
+                    decoded_data = gzip.decompress(raw_data)
+                except (OSError, EOFError):
+                    decoded_data = bytes(raw_data)
+                candidate = json.loads(decoded_data.decode("utf-8-sig"))
+                if not isinstance(candidate, dict) or not isinstance(candidate.get("layers"), list):
+                    raise ValueError("Telegram collectible document is not a valid Lottie animation")
+                animation_data = candidate
+
+                temporary_path = animation_path + ".tmp"
+                try:
+                    with open(temporary_path, "w", encoding="utf-8") as file:
+                        json.dump(animation_data, file, ensure_ascii=False, separators=(",", ":"))
+                    os.replace(temporary_path, animation_path)
+                finally:
+                    if os.path.exists(temporary_path):
+                        os.remove(temporary_path)
+                logging.info("Founder collectible animation downloaded and cached: document_id=%s", document_id)
+            except Exception as exc:
+                logging.warning("Could not download founder collectible animation %s: %s", document_id, exc)
+                if isinstance(exc, FileNotFoundError):
+                    raise
+                raise FileNotFoundError("Founder collectible animation could not be downloaded") from exc
 
         founder_gift_cache[document_id] = {"data": animation_data, "time": time.time()}
         return animation_data
@@ -2323,13 +2463,25 @@ async def get_founder_gift_animation(document_id):
 
 async def api_founder(request):
     try:
-        profile = await get_founder_profile()
-        return web.json_response(profile, headers={"Cache-Control": "public, max-age=60"})
+        profile = dict(await get_founder_profile())
+        avatar_path = founder_avatar_path()
+        if not os.path.isfile(avatar_path):
+            legacy_path = os.path.join(APP_DIR, "founder_nifort.jpg")
+            if os.path.isfile(legacy_path):
+                avatar_path = legacy_path
+        try:
+            profile["avatar_version"] = str(os.stat(avatar_path).st_mtime_ns) if os.path.isfile(avatar_path) else "0"
+        except OSError:
+            profile["avatar_version"] = "0"
+        headers = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+        return web.json_response(profile, headers=headers)
     except Exception as exc:
         logging.warning("Founder profile unavailable: %s", exc)
+        profile = build_founder_fallback_profile()
+        profile["avatar_version"] = "0"
         return web.json_response(
-            build_founder_fallback_profile(),
-            headers={"Cache-Control": "public, max-age=60"}
+            profile,
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
         )
 
 
@@ -2337,31 +2489,45 @@ async def api_founder_gift(request):
     try:
         profile = await get_founder_profile()
         if not profile.get("has_collectible"):
-            return web.json_response({"error": "No active collectible status"}, status=404)
+            return web.json_response(
+                {"error": "No active collectible status"}, status=404,
+                headers={"Cache-Control": "no-store"}
+            )
         document_id = profile.get("gift_document_id")
         if not document_id:
-            return web.json_response({"error": "Gift document unavailable"}, status=404)
+            return web.json_response(
+                {"error": "Gift document unavailable"}, status=404,
+                headers={"Cache-Control": "no-store"}
+            )
         animation = await get_founder_gift_animation(document_id)
         return web.json_response(animation, headers={"Cache-Control": "public, max-age=3600"})
     except FileNotFoundError as exc:
         logging.warning("Founder gift not found: %s", exc)
-        return web.json_response({"error": "Gift animation not found"}, status=404)
+        return web.json_response({"error": "Gift animation not found"}, status=404, headers={"Cache-Control": "no-store"})
     except Exception as exc:
         logging.warning("Founder gift animation unavailable: %s", exc)
-        return web.json_response({"error": "Gift animation temporarily unavailable"}, status=503)
+        return web.json_response({"error": "Gift animation temporarily unavailable"}, status=503, headers={"Cache-Control": "no-store"})
 
 
 async def api_founder_avatar(request):
-    avatar_path = os.path.join(DATA_DIR, "founder_nifort.jpg")
+    avatar_path = founder_avatar_path()
     if not os.path.isfile(avatar_path):
-        # Backward-compatible fallback for an existing local project layout.
+        # Backward-compatible fallback for a previous deployment layout.
         avatar_path = os.path.join(APP_DIR, "founder_nifort.jpg")
     if os.path.isfile(avatar_path):
+        try:
+            etag = str(os.stat(avatar_path).st_mtime_ns)
+        except OSError:
+            etag = "founder"
         return web.FileResponse(
             avatar_path,
-            headers={"Cache-Control": "public, max-age=86400"}
+            headers={"Cache-Control": "no-cache, must-revalidate", "ETag": '"' + etag + '"'}
         )
-    return web.Response(status=404, text="Cached founder avatar unavailable")
+    return web.Response(
+        status=404,
+        text="Cached founder avatar unavailable",
+        headers={"Cache-Control": "no-store"}
+    )
 
 
 # ============================================================
@@ -4590,7 +4756,7 @@ async def api_owner_analytics(request):
                 "projects_count": 0, "total_views": 0, "views_7d": 0,
                 "reports": 0, "pending_reports": 0, "ownership_requests": 0,
                 "official_requests": 0, "daily": [], "projects": []
-            })
+            }, headers={"Cache-Control": "no-store"})
         project_ids = [int(row["id"]) for row in projects]
         placeholders = ",".join("?" for _ in project_ids)
         reports = conn.execute(
@@ -4629,7 +4795,7 @@ async def api_owner_analytics(request):
         "ownership_requests": int(ownership_requests),
         "official_requests": int(official_requests),
         "daily": daily, "projects": project_data
-    })
+    }, headers={"Cache-Control": "no-store"})
 
 
 async def watchlist_monitor_loop():
@@ -4902,6 +5068,11 @@ async def start_telegram_checker():
 async def main():
     init_db()
     await start_telegram_checker()
+    if tg_ready:
+        try:
+            await get_founder_profile(force=True)
+        except Exception as exc:
+            logging.warning("Initial founder profile sync failed; cached profile will remain available: %s", exc)
     await seed_public_catalog()
     runner = await start_web_server()
     watchlist_task = asyncio.create_task(watchlist_monitor_loop(), name="linkcheck-watchlist-monitor")
