@@ -5355,17 +5355,20 @@ async def handle_plus_pre_checkout(query: PreCheckoutQuery):
             "SELECT * FROM plus_invoice_intents WHERE payload=? AND tg_id=? AND status='pending'",
             (query.invoice_payload, query.from_user.id)
         ).fetchone()
-        if intent and query.currency == "XTR" and query.total_amount == intent["amount_stars"]:
-            # Atomically reserve this invoice payload for a single checkout.
+        if intent and query.currency == "XTR" and int(query.total_amount) == int(intent["amount_stars"]):
             changed = conn.execute(
                 "UPDATE plus_invoice_intents SET status='checkout' "
-                "WHERE payload=? AND status='pending'",
-                (query.invoice_payload,)
+                "WHERE payload=? AND tg_id=? AND status='pending'",
+                (query.invoice_payload, query.from_user.id)
             ).rowcount
             valid = changed == 1
     if valid:
         await query.answer(ok=True)
     else:
+        logging.warning(
+            "LINKCHECK PLUS pre_checkout rejected user=%s currency=%s amount=%s payload_known=%s",
+            query.from_user.id, query.currency, query.total_amount, bool(intent)
+        )
         await query.answer(ok=False, error_message="Счёт недействителен или уже использован. Создайте новый счёт в LINKCHECK.")
 
 
@@ -5373,44 +5376,77 @@ async def handle_plus_successful_payment(message: Message):
     payment = message.successful_payment
     if not payment or payment.currency != "XTR" or not message.from_user:
         return
+    user_id = int(message.from_user.id)
+    charge_id = str(payment.telegram_payment_charge_id or "")
+    if not charge_id:
+        logging.error("LINKCHECK PLUS: successful_payment without Telegram charge id user=%s", user_id)
+        return
+
+    plan = None
+    expires = None
+    recovered_pending_checkout = False
     with db_connect() as conn:
         already_recorded = conn.execute(
             "SELECT 1 FROM plus_payments WHERE telegram_payment_charge_id=?",
-            (payment.telegram_payment_charge_id,)
+            (charge_id,)
         ).fetchone()
         if already_recorded:
+            logging.info("LINKCHECK PLUS: duplicate successful_payment ignored user=%s", user_id)
             return
+
+        # Telegram's successful_payment is the authoritative payment event.
+        # Do not lose a real payment just because the pre-checkout update was
+        # delayed or the local intent remained pending after a process restart.
         intent = conn.execute(
-            "SELECT * FROM plus_invoice_intents WHERE payload=? AND tg_id=? AND status='checkout'",
-            (payment.invoice_payload, message.from_user.id)
+            "SELECT * FROM plus_invoice_intents WHERE payload=? AND tg_id=? "
+            "AND status IN ('pending','checkout')",
+            (payment.invoice_payload, user_id)
         ).fetchone()
-        if not intent or int(payment.total_amount) != int(intent["amount_stars"]):
-            logging.warning("Получен неподтверждённый LINKCHECK PLUS payment update от %s", message.from_user.id)
+        if not intent or payment.currency != "XTR" or int(payment.total_amount) != int(intent["amount_stars"]):
+            logging.error(
+                "LINKCHECK PLUS: payment cannot be matched user=%s currency=%s amount=%s payload_known=%s",
+                user_id, payment.currency, payment.total_amount, bool(intent)
+            )
             return
+
+        recovered_pending_checkout = intent["status"] == "pending"
         plan = plus_plans().get(intent["plan_code"])
         if not plan:
+            logging.error("LINKCHECK PLUS: payment references unknown plan user=%s plan=%s", user_id, intent["plan_code"])
             return
+
         now = datetime.now(timezone.utc)
         current = conn.execute(
-            "SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (message.from_user.id,)
+            "SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (user_id,)
         ).fetchone()
         current_expiry = parse_utc_datetime(current["expires_at"], now) if current else now
         base = max(now, current_expiry)
         duration_days = int(intent["duration_days"] or plan["days"])
         expires = base + timedelta(days=duration_days)
+
         conn.execute(
             "INSERT INTO plus_payments(tg_id,plan_code,amount_stars,currency,telegram_payment_charge_id,provider_payment_charge_id,paid_at,expires_at) "
             "VALUES(?,?,?,?,?,?,?,?)",
-            (message.from_user.id, intent["plan_code"], payment.total_amount, payment.currency,
-             payment.telegram_payment_charge_id, payment.provider_payment_charge_id, now.isoformat(), expires.isoformat())
+            (user_id, intent["plan_code"], int(payment.total_amount), payment.currency,
+             charge_id, payment.provider_payment_charge_id, now.isoformat(), expires.isoformat())
         )
         conn.execute(
             "INSERT INTO plus_subscriptions(tg_id,plan_code,started_at,expires_at,updated_at) "
             "VALUES(?,?,?,?,?) ON CONFLICT(tg_id) DO UPDATE SET "
             "plan_code=excluded.plan_code, expires_at=excluded.expires_at, updated_at=excluded.updated_at",
-            (message.from_user.id, intent["plan_code"], now.isoformat(), expires.isoformat(), now.isoformat())
+            (user_id, intent["plan_code"], now.isoformat(), expires.isoformat(), now.isoformat())
         )
-        conn.execute("UPDATE plus_invoice_intents SET status='paid' WHERE payload=?", (payment.invoice_payload,))
+        conn.execute(
+            "UPDATE plus_invoice_intents SET status='paid' WHERE payload=? AND status IN ('pending','checkout')",
+            (payment.invoice_payload,)
+        )
+
+    if recovered_pending_checkout:
+        logging.warning("LINKCHECK PLUS: activated paid invoice whose pre_checkout status was still pending user=%s", user_id)
+    logging.info(
+        "LINKCHECK PLUS: subscription activated user=%s plan=%s stars=%s expires=%s charge=%s",
+        user_id, intent["plan_code"], payment.total_amount, expires.isoformat(), charge_id
+    )
     await message.answer(
         "<b>LINKCHECK PLUS активирован</b>\n\n"
         f"Тариф: {html.escape(plan['title'])}\n"
@@ -5613,9 +5649,8 @@ async def handle_business_message(message: Message):
         return
     # Store the text/metadata synchronously BEFORE any media download. A slow or
     # failed download must never prevent the original message from being archived.
-    if message.out:
-        logging.info("LINKCHECK PLUS: ignored outgoing business message chat=%s message=%s", message.chat.id, message.message_id)
-        return
+    # Business updates include both incoming and outgoing messages. Keep both:
+    # an outgoing message can also be edited or deleted later.
     media_type, media_file_id = business_media(message)
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
@@ -5629,11 +5664,12 @@ async def handle_business_message(message: Message):
             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
             "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
             "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
-            "media_file_id=excluded.media_file_id,is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
+            "media_file_id=excluded.media_file_id,media_path=COALESCE(excluded.media_path,plus_business_messages.media_path),"
+            "is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
              content, message.caption or "", media_type, media_file_id,
-             old["media_path"] if old else None, 0, now_iso())
+             old["media_path"] if old else None, int(bool(message.out)), now_iso())
         )
         conn.execute(
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
