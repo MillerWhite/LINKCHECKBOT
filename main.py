@@ -5123,6 +5123,61 @@ async def inspect_owner_business_bot(owner_id: int):
             verified = rights is not None
             rights = rights or {}
             missing = [key for key in PLUS_REQUIRED_BUSINESS_RIGHTS if not rights.get(key, False)] if verified else []
+
+            # Diagnostic only: record the actual MTProto rights fields alongside
+            # our normalized result. Values are restricted to permission booleans
+            # and the TL flags integer; no message content or session data is logged.
+            raw_rights_source = {}
+            if isinstance(rights_obj, dict):
+                raw_rights_source = dict(rights_obj)
+            elif rights_obj is not None and hasattr(rights_obj, "to_dict"):
+                try:
+                    raw_rights_source = rights_obj.to_dict()
+                except Exception:
+                    raw_rights_source = {}
+            elif rights_obj is not None and hasattr(rights_obj, "model_dump"):
+                try:
+                    raw_rights_source = rights_obj.model_dump(exclude_none=False)
+                except Exception:
+                    raw_rights_source = {}
+            if not isinstance(raw_rights_source, dict):
+                raw_rights_source = {}
+            raw_rights_fields = {}
+            for canonical, aliases in PLUS_BUSINESS_RIGHT_ALIASES.items():
+                raw_value = None
+                raw_name = None
+                for alias in aliases:
+                    if raw_rights_source.get(alias) is not None:
+                        raw_value = raw_rights_source.get(alias)
+                        raw_name = alias
+                        break
+                    if rights_obj is not None:
+                        try:
+                            candidate = getattr(rights_obj, alias)
+                        except (AttributeError, TypeError):
+                            continue
+                        if candidate is not None:
+                            raw_value = candidate
+                            raw_name = alias
+                            break
+                raw_rights_fields[canonical] = {
+                    "source_field": raw_name,
+                    "raw_value": bool(raw_value) if raw_value is not None else None,
+                    "normalized": bool(rights.get(canonical, False)),
+                }
+            raw_flags = raw_rights_source.get("flags")
+            if raw_flags is None and rights_obj is not None:
+                raw_flags = getattr(rights_obj, "flags", None)
+            try:
+                raw_flags = int(raw_flags) if raw_flags is not None else None
+            except (TypeError, ValueError):
+                raw_flags = None
+            logging.info(
+                "LINKCHECK PLUS: MTProto rights diagnostic bot=%s raw_type=%s raw_keys=%s flags=%s fields=%s",
+                expected_bot_id, type(rights_obj).__name__ if rights_obj is not None else "None",
+                sorted(str(key) for key in raw_rights_source.keys()), raw_flags,
+                json.dumps(raw_rights_fields, ensure_ascii=False, sort_keys=True),
+            )
             logging.info(
                 "LINKCHECK PLUS: MTProto found bot=%s owner=%s rights_verified=%s missing=%s raw_type=%s",
                 expected_bot_id, owner_id, verified, missing,
