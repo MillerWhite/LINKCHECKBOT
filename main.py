@@ -167,6 +167,8 @@ BUSINESS_MEDIA_TASKS = set()
 MT_PROTO_MESSAGE_CACHE = {}
 MT_PROTO_MESSAGE_CACHE_TTL = 30 * 24 * 60 * 60
 MT_PROTO_MESSAGE_CACHE_MAX = 20000
+MT_PROTO_MEDIA_CACHE_MAX_BYTES = 100 * 1024 * 1024
+MT_PROTO_MEDIA_CACHE_BYTES = 0
 MT_PROTO_CACHE_INSERT_COUNT = 0
 MT_PROTO_CAPTURE_OWNER_ID = None
 MT_PROTO_CAPTURE_HANDLER_ATTACHED = False
@@ -5764,15 +5766,11 @@ async def handle_business_message(message: Message):
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
             ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
         )
-    # The searchable snapshot is committed above before yielding control.
-    # Downloading attachments must not block a following edit/delete update.
-    media_task = asyncio.create_task(
-        persist_business_media_snapshot(
-            message, connection_id, media_file_id, old["media_path"] if old else None
-        )
+    # Persist media before this ordered Business update returns. A following
+    # edit/delete update must never overtake the original attachment download.
+    await persist_business_media_snapshot(
+        message, connection_id, media_file_id, old["media_path"] if old else None
     )
-    BUSINESS_MEDIA_TASKS.add(media_task)
-    media_task.add_done_callback(BUSINESS_MEDIA_TASKS.discard)
     logging.info(
         "LINKCHECK PLUS: saved Business message snapshot owner=%s chat=%s message=%s outgoing=%s media=%s text_length=%s",
         connection["owner_tg_id"], message.chat.id, message.message_id, bool(message.out),
@@ -5811,9 +5809,9 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bo
 
 
 
-def cache_mtproto_message_snapshot(event):
-    """Cache private messages in RAM only; promote only after a Business update confirms them."""
-    global MT_PROTO_CACHE_INSERT_COUNT
+async def cache_mtproto_message_snapshot(event):
+    """Cache private-message metadata and downloadable media in RAM until Business confirms it."""
+    global MT_PROTO_CACHE_INSERT_COUNT, MT_PROTO_MEDIA_CACHE_BYTES
     try:
         if not getattr(event, "is_private", False):
             return
@@ -5843,13 +5841,48 @@ def cache_mtproto_message_snapshot(event):
         )
         content = str(getattr(message, "message", None) or getattr(message, "text", None) or "")
         media_type = None
-        if getattr(message, "photo", None): media_type = "photo"
-        elif getattr(message, "video", None): media_type = "video"
-        elif getattr(message, "gif", None): media_type = "animation"
-        elif getattr(message, "voice", None): media_type = "voice"
-        elif getattr(message, "audio", None): media_type = "audio"
-        elif getattr(message, "sticker", None): media_type = "sticker"
-        elif getattr(message, "document", None): media_type = "document"
+        if getattr(message, "photo", None):
+            media_type = "photo"
+        elif getattr(message, "video", None):
+            media_type = "video"
+        elif getattr(message, "gif", None):
+            media_type = "animation"
+        elif getattr(message, "voice", None):
+            media_type = "voice"
+        elif getattr(message, "audio", None):
+            media_type = "audio"
+        elif getattr(message, "sticker", None):
+            media_type = "sticker"
+        elif getattr(message, "document", None):
+            media_type = "document"
+
+        # Telethon sees the original private message at arrival time. Download
+        # media immediately while temporary/view-once media may still be available.
+        # Bytes remain RAM-only until a matching Business edit/delete confirms them.
+        media_bytes = None
+        media_error = None
+        if media_type:
+            try:
+                downloaded = await asyncio.wait_for(
+                    message.download_media(file=bytes),
+                    timeout=25
+                )
+                if isinstance(downloaded, bytes) and downloaded:
+                    if len(downloaded) <= 20 * 1024 * 1024:
+                        media_bytes = downloaded
+                    else:
+                        media_error = "over_20mb"
+                else:
+                    media_error = "download_unavailable"
+            except asyncio.TimeoutError:
+                media_error = "download_timeout"
+            except Exception as exc:
+                media_error = type(exc).__name__
+                logging.warning(
+                    "LINKCHECK PLUS MTProto media capture failed owner=%s chat=%s message=%s type=%s error=%s",
+                    owner_id, chat_id, getattr(message, "id", None), media_type, media_error
+                )
+
         if not content and media_type:
             content = {
                 "photo":"[Фото]", "video":"[Видео]", "animation":"[GIF]",
@@ -5857,6 +5890,10 @@ def cache_mtproto_message_snapshot(event):
                 "sticker":"[Стикер]", "document":"[Файл]"
             }.get(media_type, "[Медиа]")
         date_value = getattr(message, "date", None)
+        cache_key = (int(chat_id), int(message.id))
+        previous = MT_PROTO_MESSAGE_CACHE.get(cache_key)
+        if previous:
+            MT_PROTO_MEDIA_CACHE_BYTES -= len(previous.get("media_bytes") or b"")
         snapshot = {
             "chat_id": int(chat_id), "message_id": int(message.id),
             "message_date": date_value.isoformat() if date_value else now_iso(),
@@ -5864,37 +5901,78 @@ def cache_mtproto_message_snapshot(event):
             "sender_label": "Вы" if bool(getattr(message, "out", False)) else str(chat_title)[:160],
             "text_content": content, "caption": content if media_type else "",
             "media_type": media_type, "media_file_id": None, "media_path": None,
+            "media_bytes": media_bytes, "media_error": media_error,
+            "media_ttl_seconds": getattr(getattr(message, "media", None), "ttl_seconds", None),
             "is_outgoing": int(bool(getattr(message, "out", False))),
             "cached_at": time.time()
         }
-        MT_PROTO_MESSAGE_CACHE[(int(chat_id), int(message.id))] = snapshot
+        MT_PROTO_MESSAGE_CACHE[cache_key] = snapshot
+        MT_PROTO_MEDIA_CACHE_BYTES += len(media_bytes or b"")
         logging.info(
-            "LINKCHECK PLUS MTProto snapshot cached owner=%s chat=%s message=%s text_length=%s",
-            owner_id, chat_id, message.id, len(content)
+            "LINKCHECK PLUS MTProto snapshot cached owner=%s chat=%s message=%s text_length=%s media=%s media_bytes=%s media_error=%s ttl_seconds=%s",
+            owner_id, chat_id, message.id, len(content), media_type or "none",
+            len(media_bytes or b""), media_error, snapshot["media_ttl_seconds"]
         )
         MT_PROTO_CACHE_INSERT_COUNT += 1
         if MT_PROTO_CACHE_INSERT_COUNT % 250 == 0:
             cutoff = time.time() - MT_PROTO_MESSAGE_CACHE_TTL
             for old_key, old_value in list(MT_PROTO_MESSAGE_CACHE.items()):
                 if old_value.get("cached_at", 0) < cutoff:
+                    MT_PROTO_MEDIA_CACHE_BYTES -= len(old_value.get("media_bytes") or b"")
                     MT_PROTO_MESSAGE_CACHE.pop(old_key, None)
+        # Keep the RAM-only media backup bounded independently of message count.
+        while MT_PROTO_MEDIA_CACHE_BYTES > MT_PROTO_MEDIA_CACHE_MAX_BYTES and MT_PROTO_MESSAGE_CACHE:
+            oldest_key = min(
+                MT_PROTO_MESSAGE_CACHE,
+                key=lambda key: MT_PROTO_MESSAGE_CACHE[key].get("cached_at", 0)
+            )
+            oldest = MT_PROTO_MESSAGE_CACHE.pop(oldest_key)
+            MT_PROTO_MEDIA_CACHE_BYTES -= len(oldest.get("media_bytes") or b"")
         if len(MT_PROTO_MESSAGE_CACHE) > MT_PROTO_MESSAGE_CACHE_MAX:
-            oldest = sorted(MT_PROTO_MESSAGE_CACHE, key=lambda k: MT_PROTO_MESSAGE_CACHE[k].get("cached_at", 0))
-            for key in oldest[:len(MT_PROTO_MESSAGE_CACHE) - MT_PROTO_MESSAGE_CACHE_MAX]:
-                MT_PROTO_MESSAGE_CACHE.pop(key, None)
+            oldest_keys = sorted(
+                MT_PROTO_MESSAGE_CACHE,
+                key=lambda key: MT_PROTO_MESSAGE_CACHE[key].get("cached_at", 0)
+            )
+            for old_key in oldest_keys[:len(MT_PROTO_MESSAGE_CACHE) - MT_PROTO_MESSAGE_CACHE_MAX]:
+                old_value = MT_PROTO_MESSAGE_CACHE.pop(old_key, None)
+                if old_value:
+                    MT_PROTO_MEDIA_CACHE_BYTES -= len(old_value.get("media_bytes") or b"")
     except Exception:
-        logging.exception("LINKCHECK PLUS MTProto message cache failed")
+        logging.exception("LINKCHECK PLUS MTProto message/media cache failed")
 
 
 async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id: int,
                                                   chat_id: int, message_id: int):
-    """Promote an in-memory original into SQLite after a Business edit/delete update."""
-    snapshot = MT_PROTO_MESSAGE_CACHE.get((int(chat_id), int(message_id)))
+    """Promote an in-memory original, including media bytes, after Business confirms it."""
+    global MT_PROTO_MEDIA_CACHE_BYTES
+    cache_key = (int(chat_id), int(message_id))
+    snapshot = MT_PROTO_MESSAGE_CACHE.get(cache_key)
     if not snapshot:
         return None
     if time.time() - float(snapshot.get("cached_at", 0)) > MT_PROTO_MESSAGE_CACHE_TTL:
-        MT_PROTO_MESSAGE_CACHE.pop((int(chat_id), int(message_id)), None)
+        MT_PROTO_MEDIA_CACHE_BYTES -= len(snapshot.get("media_bytes") or b"")
+        MT_PROTO_MESSAGE_CACHE.pop(cache_key, None)
         return None
+
+    media_path = None
+    media_bytes = snapshot.get("media_bytes")
+    if media_bytes:
+        media_dir = os.path.join(DATA_DIR, "plus_media")
+        os.makedirs(media_dir, exist_ok=True)
+        connection_part = re.sub(r"[^A-Za-z0-9_-]", "_", str(connection_id or "connection"))[:40]
+        media_path = os.path.join(
+            media_dir, f"{connection_part}_{int(chat_id)}_{int(message_id)}_mtproto"
+        )
+        try:
+            with open(media_path, "wb") as media_file:
+                media_file.write(media_bytes)
+        except OSError:
+            logging.exception(
+                "LINKCHECK PLUS: could not promote MTProto media snapshot owner=%s chat=%s message=%s",
+                owner_tg_id, chat_id, message_id
+            )
+            media_path = None
+
     with db_connect() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO plus_business_messages("
@@ -5904,15 +5982,35 @@ async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id
             (str(connection_id), int(owner_tg_id), int(chat_id), int(message_id),
              snapshot.get("message_date"), snapshot.get("chat_title"), snapshot.get("sender_label"),
              snapshot.get("text_content"), snapshot.get("caption"), snapshot.get("media_type"),
-             None, None, int(snapshot.get("is_outgoing", 0)), now_iso())
+             None, media_path, int(snapshot.get("is_outgoing", 0)), now_iso())
         )
         row = conn.execute(
             "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
             (str(connection_id), int(chat_id), int(message_id))
         ).fetchone()
+        # If a Bot API row already exists but its media download failed, attach
+        # the MTProto copy without overwriting any successfully saved attachment.
+        if row and media_path and not row["media_path"]:
+            conn.execute(
+                "UPDATE plus_business_messages SET media_path=? "
+                "WHERE connection_id=? AND chat_id=? AND message_id=? AND media_path IS NULL",
+                (media_path, str(connection_id), int(chat_id), int(message_id))
+            )
+            row = conn.execute(
+                "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                (str(connection_id), int(chat_id), int(message_id))
+            ).fetchone()
     if row:
-        logging.info("LINKCHECK PLUS: recovered original Business snapshot from MTProto cache owner=%s chat=%s message=%s",
-                     owner_tg_id, chat_id, message_id)
+        logging.info(
+            "LINKCHECK PLUS: recovered original Business snapshot from MTProto cache owner=%s chat=%s message=%s media=%s media_bytes=%s",
+            owner_tg_id, chat_id, message_id, snapshot.get("media_type") or "none",
+            len(media_bytes or b"")
+        )
+    # Release potentially large byte buffers after promotion to persistent storage.
+    if snapshot.get("media_bytes"):
+        MT_PROTO_MEDIA_CACHE_BYTES -= len(snapshot["media_bytes"])
+        snapshot["media_bytes"] = None
+    MT_PROTO_MESSAGE_CACHE.pop(cache_key, None)
     return row
 
 
@@ -5936,7 +6034,7 @@ async def attach_mtproto_business_snapshot_listener(owner_tg_id: int):
     if MT_PROTO_CAPTURE_HANDLER_ATTACHED:
         return
     async def on_private_message(event):
-        cache_mtproto_message_snapshot(event)
+        await cache_mtproto_message_snapshot(event)
     tg_client.add_event_handler(on_private_message, events.NewMessage())
     MT_PROTO_CAPTURE_HANDLER_ATTACHED = True
     logging.info("LINKCHECK PLUS MTProto snapshot cache attached owner=%s mode=in-memory-only ttl_days=30 max_messages=20000",
