@@ -167,6 +167,7 @@ BUSINESS_MEDIA_TASKS = set()
 MT_PROTO_MESSAGE_CACHE = {}
 MT_PROTO_MESSAGE_CACHE_TTL = 30 * 24 * 60 * 60
 MT_PROTO_MESSAGE_CACHE_MAX = 20000
+MT_PROTO_CACHE_INSERT_COUNT = 0
 MT_PROTO_CAPTURE_OWNER_ID = None
 MT_PROTO_CAPTURE_HANDLER_ATTACHED = False
 
@@ -5811,6 +5812,7 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bo
 
 
 def cache_mtproto_message_snapshot(event):
+    global MT_PROTO_CACHE_INSERT_COUNT
     """Cache private messages in RAM only; promote only after a Business update confirms them."""
     try:
         if not getattr(event, "is_private", False):
@@ -5826,6 +5828,9 @@ def cache_mtproto_message_snapshot(event):
                 (int(owner_id),)
             ).fetchone()
         if not active:
+            return
+        sub = plus_subscription_for(int(owner_id))
+        if not sub or not sub["active"]:
             return
         entity = getattr(event, "chat", None)
         chat_title = (
@@ -5863,6 +5868,12 @@ def cache_mtproto_message_snapshot(event):
             "cached_at": time.time()
         }
         MT_PROTO_MESSAGE_CACHE[(int(chat_id), int(message.id))] = snapshot
+        MT_PROTO_CACHE_INSERT_COUNT += 1
+        if MT_PROTO_CACHE_INSERT_COUNT % 250 == 0:
+            cutoff = time.time() - MT_PROTO_MESSAGE_CACHE_TTL
+            for old_key, old_value in list(MT_PROTO_MESSAGE_CACHE.items()):
+                if old_value.get("cached_at", 0) < cutoff:
+                    MT_PROTO_MESSAGE_CACHE.pop(old_key, None)
         if len(MT_PROTO_MESSAGE_CACHE) > MT_PROTO_MESSAGE_CACHE_MAX:
             oldest = sorted(MT_PROTO_MESSAGE_CACHE, key=lambda k: MT_PROTO_MESSAGE_CACHE[k].get("cached_at", 0))
             for key in oldest[:len(MT_PROTO_MESSAGE_CACHE) - MT_PROTO_MESSAGE_CACHE_MAX]:
@@ -5908,6 +5919,16 @@ async def attach_mtproto_business_snapshot_listener(owner_tg_id: int):
         logging.warning("LINKCHECK PLUS MTProto snapshot cache unavailable: Telethon events not installed")
         return
     MT_PROTO_CAPTURE_OWNER_ID = int(owner_tg_id)
+    with db_connect() as conn:
+        matching_business = conn.execute(
+            "SELECT COUNT(*) AS n FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1",
+            (int(owner_tg_id),)
+        ).fetchone()
+    if not matching_business or not int(matching_business["n"] or 0):
+        logging.warning(
+            "LINKCHECK PLUS MTProto cache attached but session owner=%s has no enabled Business connection; cache will remain inactive until IDs match",
+            owner_tg_id
+        )
     if MT_PROTO_CAPTURE_HANDLER_ATTACHED:
         return
     async def on_private_message(event):
@@ -5974,10 +5995,10 @@ async def handle_edited_business_message(message: Message):
         current_text = business_message_content(message) or "[Сообщение без текстового содержимого]"
         await bot.send_message(
             connection["user_chat_id"],
-            "<b>LINKCHECK PLUS: получена новая версия сообщения</b>\\n"
-            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\\n"
-            "<b>Текст, который Telegram передал после изменения:</b>\\n"
-            f"<pre>{html.escape(current_text[:3000])}</pre>\\n"
+            "<b>LINKCHECK PLUS: получена новая версия сообщения</b>\n"
+            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\n"
+            "<b>Текст, который Telegram передал после изменения:</b>\n"
+            f"<pre>{html.escape(current_text[:3000])}</pre>\n"
             "<i>Исходная версия не пришла ни в архив Bot API, ни в резервный кэш MTProto. "
             "Telegram не предоставляет старый текст в событии редактирования.</i>"
         )
