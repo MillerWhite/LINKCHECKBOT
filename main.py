@@ -5676,6 +5676,8 @@ async def refresh_business_connection(connection_id: str):
 
 
 async def handle_business_message(message: Message):
+    logging.info("LINKCHECK PLUS: business_message handler started connection=%s chat=%s message=%s outgoing=%s",
+                 message.business_connection_id, message.chat.id, message.message_id, bool(message.out))
     connection_id = message.business_connection_id
     if not connection_id:
         logging.warning("LINKCHECK PLUS: business_message arrived without business_connection_id")
@@ -5782,6 +5784,8 @@ async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bo
 
 
 async def handle_edited_business_message(message: Message):
+    logging.info("LINKCHECK PLUS: edited_business_message handler started connection=%s chat=%s message=%s",
+                 message.business_connection_id, message.chat.id, message.message_id)
     connection_id = message.business_connection_id
     if not connection_id:
         logging.warning("LINKCHECK PLUS: edited_business_message without connection id")
@@ -5839,6 +5843,8 @@ async def handle_edited_business_message(message: Message):
 
 
 async def handle_deleted_business_messages(event):
+    logging.info("LINKCHECK PLUS: deleted_business_messages handler started connection=%s chat=%s ids=%s",
+                 event.business_connection_id, event.chat.id, list(event.message_ids))
     with db_connect() as conn:
         connection = conn.execute(
             "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
@@ -5934,40 +5940,14 @@ async def plus_retention_cleanup_loop():
         await asyncio.sleep(3600)
 
 
-# Register Telegram update handlers. Polling below explicitly requests their update types.
+# Register Business events through their dedicated aiogram observers.
+# aiogram 3.31+ provides current Bot API models and typed Business observers.
 dp.pre_checkout_query.register(handle_plus_pre_checkout)
 dp.message.register(handle_plus_successful_payment, F.successful_payment)
-async def handle_business_update(update: Update):
-    """Single raw-update entry point for all Business events.
-
-    Routing from Update itself avoids relying on separate observer registration
-    for Business update variants. Every received event is logged before handling.
-    """
-    try:
-        if update.business_connection is not None:
-            logging.info("LINKCHECK PLUS: received business_connection update_id=%s", update.update_id)
-            await handle_business_connection(update.business_connection)
-        elif update.business_message is not None:
-            msg = update.business_message
-            logging.info("LINKCHECK PLUS: received business_message update_id=%s connection=%s chat=%s message=%s outgoing=%s",
-                         update.update_id, msg.business_connection_id, msg.chat.id, msg.message_id, bool(msg.out))
-            await handle_business_message(msg)
-        elif update.edited_business_message is not None:
-            msg = update.edited_business_message
-            logging.info("LINKCHECK PLUS: received edited_business_message update_id=%s connection=%s chat=%s message=%s",
-                         update.update_id, msg.business_connection_id, msg.chat.id, msg.message_id)
-            await handle_edited_business_message(msg)
-        elif update.deleted_business_messages is not None:
-            event = update.deleted_business_messages
-            logging.info("LINKCHECK PLUS: received deleted_business_messages update_id=%s connection=%s chat=%s ids=%s",
-                         update.update_id, event.business_connection_id, event.chat.id, list(event.message_ids))
-            await handle_deleted_business_messages(event)
-    except Exception:
-        logging.exception("LINKCHECK PLUS: unhandled error while processing Telegram Business update_id=%s", update.update_id)
-
-# Business events are routed from the raw Update observer to avoid missed dispatch
-# caused by version-specific typed observer registration behavior.
-dp.update.register(handle_business_update)
+dp.business_connection.register(handle_business_connection)
+dp.business_message.register(handle_business_message)
+dp.edited_business_message.register(handle_edited_business_message)
+dp.deleted_business_messages.register(handle_deleted_business_messages)
 
 # ============================================================
 # WEB SERVER
