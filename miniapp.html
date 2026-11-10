@@ -202,7 +202,6 @@ input::placeholder,textarea::placeholder{color:#666}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 
 .catalog-topic-label{display:inline-flex;margin:8px 0 2px;padding:4px 8px;border:1px solid #333;border-radius:20px;color:#aaa;font-size:10px}
-.project-history{margin-top:12px;padding-top:10px;border-top:1px solid #292929}
 .watch-toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:0 0 12px;flex-wrap:wrap}
 .watch-toolbar .btn-admin{flex:0 0 auto}
 .watch-action{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 10px;border:1px solid #444;border-radius:10px;background:#ffffff08;color:#ddd;font-size:11px;font-weight:800;cursor:pointer}
@@ -221,7 +220,46 @@ input::placeholder,textarea::placeholder{color:#666}
 .owner-day{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:0}
 .owner-day-bar{width:100%;min-height:3px;border-radius:5px 5px 2px 2px;background:#bdbdbd;opacity:.85}
 .owner-day-label{font-size:9px;color:#777}
-#screen-watchlist .section-heading{margin:22px 0 10px;font-size:16px}
+#screen-watchlist h2{margin-bottom:18px}
+#screen-watchlist .watch-toolbar{margin:0 0 14px}
+#screen-watchlist .section-heading{margin:23px 0 11px;font-size:13px;font-weight:800;letter-spacing:.35px;color:#aaa;text-transform:uppercase}
+#screen-watchlist .catalog-results-count{margin:0;color:#777;font-size:11px;font-weight:700;letter-spacing:.2px}
+.watch-refresh{display:inline-grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid #303030;border-radius:10px;background:#101010;color:#aaa;cursor:pointer}
+.watch-refresh svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.saved-project-list{display:flex;flex-direction:column;gap:8px}
+.saved-project-row{display:grid;grid-template-columns:minmax(0,1fr) 36px;align-items:center;gap:10px;min-width:0;padding:13px 12px;background:linear-gradient(145deg,#141414,#0c0c0c);border:1px solid #282828;border-radius:13px;transition:border-color .2s,background .2s}
+.saved-project-main{display:flex;flex-direction:column;gap:5px;min-width:0;color:inherit;text-decoration:none}
+.saved-project-title{font-size:13px;font-weight:750;line-height:1.35;color:#f1f1f1;overflow-wrap:anywhere}
+.saved-project-link{font-size:11px;line-height:1.35;color:#777;overflow-wrap:anywhere}
+.saved-project-meta{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:2px}
+.saved-project-chip{display:inline-flex;align-items:center;min-height:20px;padding:3px 7px;border:1px solid #303030;border-radius:6px;background:#ffffff04;color:#999;font-size:9px;font-weight:700;line-height:1.2}
+.saved-project-chip.verified{border-color:#31533e;color:#8ac99e}
+.saved-project-chip.official{border-color:#55482b;color:#d3b978}
+.saved-project-remove{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid #333;border-radius:10px;background:#ffffff05;color:#777;cursor:pointer;transition:all .2s}
+.saved-project-remove:hover{border-color:#777;color:#eee;background:#ffffff0c}
+.saved-project-remove:disabled{opacity:.45;cursor:wait}
+.saved-project-remove svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.catalog-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:13px;padding-top:10px;border-top:1px solid #222}
+.catalog-card-actions .btn-report{margin-top:0}
+.watch-icon-button{display:inline-grid;place-items:center;width:34px;height:34px;flex:0 0 34px;padding:0;border:1px solid #353535;border-radius:10px;background:#ffffff04;color:#929292;cursor:pointer;transition:all .18s}
+.watch-icon-button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.watch-icon-button.is-saved{border-color:#777;background:#ffffff12;color:#f4f4f4}
+.watch-icon-button.is-saved svg path{fill:#eee;stroke:#eee}
+.watch-icon-button:active,.saved-project-remove:active{transform:scale(.94)}
+.watch-notifications{margin-top:22px;padding-top:17px;border-top:1px solid #252525}
+.watch-notification-list{display:flex;flex-direction:column;gap:7px}
+.watch-notification-row{display:grid;grid-template-columns:5px minmax(0,1fr);gap:10px;padding:10px 11px;border:1px solid #282828;border-radius:11px;background:#0d0d0d}
+.watch-notification-dot{width:5px;height:5px;margin-top:5px;border-radius:50%;background:#555}
+.watch-notification-row.unread .watch-notification-dot{background:#eee;box-shadow:0 0 8px #fff7}
+.watch-notification-title{font-size:12px;font-weight:700;color:#ddd;line-height:1.4}
+.watch-notification-message{margin-top:3px;font-size:11px;line-height:1.45;color:#888;overflow-wrap:anywhere}
+.watch-notification-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:7px}
+.watch-notification-date{font-size:10px;color:#666}
+.watch-notification-read{padding:3px 0;border:0;background:none;color:#aaa;font-size:10px;font-weight:700;cursor:pointer}
+.watch-notification-read:hover{color:#fff}
+#owner-analytics{display:none}
+.founder-gift{width:17px;height:17px;flex:0 0 17px;display:none;align-items:center;justify-content:center;margin-left:2px;overflow:hidden}
+.founder-gift svg{display:block;width:100%;height:100%}
 .bottom-nav .nav-item{flex:1;min-width:0;padding-left:2px;padding-right:2px;font-size:9px}
 .bottom-nav .nav-item svg{width:21px;height:21px}
 @media(min-width:520px){.owner-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
@@ -244,12 +282,6 @@ input::placeholder,textarea::placeholder{color:#666}
         <div id="result-text" style="font-size:14px;color:var(--silver);line-height:1.6"></div>
     </div>
     <div class="stats-row"><div class="stat-box"><div class="stat-num" id="stat-projects">-</div><div class="stat-label" data-i18n="projects">Проектов</div></div></div>
-    <div id="home-personal-summary" class="card" style="display:none;padding:13px 15px;margin-top:-8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-            <div><b data-i18n="personalUpdatesTitle">Ваш LINKCHECK</b><div id="home-personal-summary-text" style="font-size:12px;color:#999;margin-top:5px"></div></div>
-            <button class="watch-action" type="button" onclick="openWatchlistFromHome()" data-i18n="openSaved">Открыть</button>
-        </div>
-    </div>
     <h2 data-i18n="recentChecks">Последние проверки</h2>
     <div id="recent-projects" class="recent-grid"><div class="empty-state" data-i18n="noProjects">Пока нет добавленных проектов</div></div>
     <div class="founder-card">
@@ -341,7 +373,7 @@ input::placeholder,textarea::placeholder{color:#666}
 <div id="screen-profile" class="screen">
     <h2 data-i18n="myProjects">Мои проекты</h2>
     <div id="my-projects-list" class="recent-grid"><div class="empty-state" data-i18n="noOwnProjects">У вас пока нет проектов</div></div>
-    <div class="card owner-analytics" id="owner-analytics">
+    <div class="card owner-analytics" id="owner-analytics" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
             <div><b data-i18n="ownerAnalyticsTitle">Статистика владельца</b><div style="font-size:11px;color:#777;margin-top:5px" data-i18n="ownerAnalyticsSubtitle">Просмотры и обращения по вашим проектам</div></div>
             <button class="watch-action" type="button" onclick="loadOwnerAnalytics()" data-i18n="refresh">Обновить</button>
@@ -351,19 +383,22 @@ input::placeholder,textarea::placeholder{color:#666}
     <a class="privacy-link" id="privacy-link" href="/privacy?lang=ru" onclick="event.preventDefault();openPrivacyPolicy()" data-i18n="privacyPolicy">Политика конфиденциальности</a>
 </div>
 <div id="screen-watchlist" class="screen">
-    <h2 data-i18n="watchlistTitle">Избранное и отслеживание</h2>
-    <p class="subtitle" data-i18n="watchlistSubtitle">Сохраняйте проекты и следите за изменениями их статусов.</p>
+    <h2 data-i18n="watchlistTitle">Избранное</h2>
     <div class="watch-toolbar">
         <span id="watchlist-count" class="catalog-results-count"></span>
-        <button class="btn-admin" type="button" onclick="loadWatchlistScreen()" data-i18n="refresh">Обновить</button>
+        <button class="watch-refresh" type="button" onclick="loadWatchlistScreen()" aria-label="Обновить" title="Обновить">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2L20 12M4 12l2.5 5a7 7 0 0 0 12-2"/></svg>
+        </button>
     </div>
-    <div id="watchlist-list" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
-    <h3 class="section-heading" data-i18n="notificationsTitle">Уведомления об изменениях</h3>
-    <div class="watch-toolbar">
-        <span id="notification-count" class="catalog-results-count"></span>
-        <button class="btn-admin" type="button" onclick="markAllNotificationsRead()" data-i18n="markRead">Отметить прочитанными</button>
+    <div id="watchlist-list" class="saved-project-list"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <div id="watchlist-notifications-section" class="watch-notifications" style="display:none">
+        <h3 class="section-heading" data-i18n="notificationsTitle">Уведомления</h3>
+        <div class="watch-toolbar">
+            <span id="notification-count" class="catalog-results-count"></span>
+            <button class="watch-action" type="button" onclick="markAllNotificationsRead()" data-i18n="markRead">Отметить прочитанными</button>
+        </div>
+        <div id="notifications-list" class="watch-notification-list"></div>
     </div>
-    <div id="notifications-list" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
 </div>
 <div id="screen-admin" class="screen">
     <h2 data-i18n="adminPanel">Админ-панель</h2>
@@ -589,8 +624,7 @@ Object.assign(translations.en,{
 Object.assign(translations.ru,{privacyPolicy:'Политика конфиденциальности'});
 Object.assign(translations.en,{privacyPolicy:'Privacy Policy'});
 Object.assign(translations.ru,{
-    personalUpdatesTitle:'Ваш LINKCHECK',openSaved:'Открыть',watchlistTitle:'Избранное и отслеживание',
-    watchlistSubtitle:'Сохраняйте проекты и следите за изменениями их статусов.',savedShort:'Избранное',
+    watchlistTitle:'Избранное',savedCountLabel:'в избранном',savedShort:'Избранное',
     notificationsTitle:'Уведомления об изменениях',refresh:'Обновить',markRead:'Отметить прочитанными',
     noSavedProjects:'Вы пока не добавили проекты в избранное.',noNotifications:'Новых уведомлений пока нет.',
     saveProject:'В избранное',removeSaved:'Убрать',savedAdded:'Проект добавлен в избранное',
@@ -605,13 +639,10 @@ Object.assign(translations.ru,{
     signInForSaved:'Откройте LINKCHECK через Telegram, чтобы использовать избранное.',
     topicUnspecified:'Тематика не указана',topicAll:'Все тематики',topicNews:'Новости и СМИ',topicFinance:'Финансы и банки',
     topicGovernment:'Государственные сервисы',topicEducation:'Образование',topicTechnology:'Технологии',
-    topicShopping:'Покупки и маркетплейсы',topicEntertainment:'Развлечения',topicOther:'Другое',projectHistory:'История изменений',
-    noProjectHistory:'История изменений пока пуста',historyLoadError:'Не удалось загрузить историю',
-    historyStatus:'Статусы',historyTitle:'Название',historyLink:'Ссылка',historyDescription:'Описание',historyWebsite:'Сайт',historyTopic:'Тематика',historyModeration:'Публикация',historyOwnership:'Владение'
+    topicShopping:'Покупки и маркетплейсы',topicEntertainment:'Развлечения',topicOther:'Другое',
 });
 Object.assign(translations.en,{
-    personalUpdatesTitle:'Your LINKCHECK',openSaved:'Open',watchlistTitle:'Saved and following',
-    watchlistSubtitle:'Save projects and follow changes to their statuses.',savedShort:'Saved',
+    watchlistTitle:'Saved',savedCountLabel:'saved',savedShort:'Saved',
     notificationsTitle:'Change notifications',refresh:'Refresh',markRead:'Mark as read',
     noSavedProjects:'You have not saved any projects yet.',noNotifications:'There are no notifications yet.',
     saveProject:'Save',removeSaved:'Remove',savedAdded:'Project saved',savedRemoved:'Project removed from saved',
@@ -626,8 +657,7 @@ Object.assign(translations.en,{
     signInForSaved:'Open LINKCHECK through Telegram to use saved projects.',
     topicUnspecified:'No topic specified',topicAll:'All topics',topicNews:'News and media',topicFinance:'Finance and banking',
     topicGovernment:'Government services',topicEducation:'Education',topicTechnology:'Technology',
-    topicShopping:'Shopping and marketplaces',topicEntertainment:'Entertainment',topicOther:'Other',projectHistory:'Change history',
-    noProjectHistory:'No change history yet',historyLoadError:'Could not load change history',
+    topicShopping:'Shopping and marketplaces',topicEntertainment:'Entertainment',topicOther:'Other',
     historyStatus:'Statuses',historyTitle:'Title',historyLink:'Link',historyDescription:'Description',historyWebsite:'Website',historyTopic:'Topic',historyModeration:'Publication',historyOwnership:'Ownership'
 });
 
@@ -869,11 +899,11 @@ function renderProjectCard(project,showPublished=true){
     const projectId=Number(project.id);
     const topicLabel=project.topic?`<div class="catalog-topic-label">${escapeHTML(t('topic'+String(project.topic).charAt(0).toUpperCase()+String(project.topic).slice(1))||project.topic)}</div>`:'';
     const isSaved=watchlistProjectIds.has(projectId);
-    const watchButton=showPublished?`<button class="watch-action ${isSaved?'saved':''}" type="button" onclick="toggleWatchProject(${projectId},this)">${escapeHTML(isSaved?t('removeSaved'):t('saveProject'))}</button>`:'';
+    const watchLabel=isSaved?t('removeSaved'):t('saveProject');
+    const watchButton=showPublished?`<button class="watch-icon-button ${isSaved?'is-saved':''}" type="button" onclick="toggleWatchProject(${projectId},this)" aria-label="${escapeHTML(watchLabel)}" title="${escapeHTML(watchLabel)}" aria-pressed="${isSaved?'true':'false'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11A1.5 1.5 0 0 1 19 5v16l-7-4-7 4V5a1.5 1.5 0 0 1 1.5-1.5Z"/></svg></button>`:'';
     const reportButton=showPublished?`<button class="btn-report" type="button" onclick="openReportModal(${projectId})">${escapeHTML(t('reportProject'))}</button>`:'';
-    const historyButton=`<button class="btn-admin" type="button" onclick="loadProjectChanges(${projectId},this)">${escapeHTML(t('projectHistory'))}</button>`;
     const freshness=project.last_checked_at?`<div class="catalog-freshness">${escapeHTML(t('catalogLastChecked'))}: ${escapeHTML(formatMoscowDateTime(project.last_checked_at))}</div>`:'';
-    return `<div class="card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br><a href="https://t.me/${encodeURIComponent(String(project.link||'').replace(/^@/,''))}" onclick="trackProjectView(${projectId})" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;text-decoration:none">${escapeHTML(project.link)}</a><div class="project-badges">${renderProjectBadges(project)}</div>${topicLabel}${description}${website}${source}${freshness}${published}<div class="admin-actions">${historyButton}${watchButton}${reportButton}</div><div class="project-history" id="project-history-${projectId}" style="display:none"></div></div>`;
+    return `<div class="card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br><a href="https://t.me/${encodeURIComponent(String(project.link||'').replace(/^@/,''))}" onclick="trackProjectView(${projectId})" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;text-decoration:none">${escapeHTML(project.link)}</a><div class="project-badges">${renderProjectBadges(project)}</div>${topicLabel}${description}${website}${source}${freshness}${published}<div class="catalog-card-actions">${reportButton}${watchButton}</div></div>`;
 }
 
 function normalizeSearchText(value){return String(value??'').toLocaleLowerCase().replace(/ё/g,'е').trim()}
@@ -1039,6 +1069,9 @@ function stopFounderGiftAnimation(){
     founderGiftDocumentId=null;
 }
 
+function founderGiftFallbackMarkup(){
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12v9H4v-9M2.5 7.5h19v4h-19zM12 7.5V21M12 7.5H8.7a2.7 2.7 0 1 1 2.7-2.7v2.7Zm0 0h3.3a2.7 2.7 0 1 0-2.7-2.7v2.7Z" fill="none" stroke="#e8e0cf" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+}
 async function loadFounderGift(documentId){
     const container=document.getElementById('founder-gift');
     if(!container)return;
@@ -1046,25 +1079,29 @@ async function loadFounderGift(documentId){
     const normalizedId=String(documentId);
     if(normalizedId===String(founderGiftDocumentId))return;
     if(founderGiftRequest)return founderGiftRequest;
-    if(founderGiftFailedDocumentId===normalizedId&&Date.now()-founderGiftFailedAt<300000)return;
+    if(founderGiftFailedDocumentId===normalizedId&&Date.now()-founderGiftFailedAt<300000){
+        container.innerHTML=founderGiftFallbackMarkup();container.style.display='inline-flex';return;
+    }
     if(founderGiftFailedDocumentId!==normalizedId){founderGiftFailedDocumentId=null;founderGiftFailedAt=0}
 
     founderGiftRequest=(async()=>{
         stopFounderGiftAnimation();
+        container.innerHTML=founderGiftFallbackMarkup();container.style.display='inline-flex';
         try{
             const response=await fetch('/api/founder/gift?v='+encodeURIComponent(normalizedId),{cache:'default'});
             if(!response.ok)throw new Error('Gift animation unavailable');
             const animationData=await response.json();
             if(!window.lottie)throw new Error('Lottie library unavailable');
-            container.innerHTML='';container.style.display='flex';
+            container.innerHTML='';container.style.display='inline-flex';
             founderGiftAnimation=window.lottie.loadAnimation({
                 container:container,renderer:'svg',loop:true,autoplay:true,animationData:animationData
             });
             founderGiftDocumentId=normalizedId;
             founderGiftFailedDocumentId=null;founderGiftFailedAt=0;
         }catch(error){
-            console.warn('Founder gift loading error:',error);
-            stopFounderGiftAnimation();
+            console.warn('Founder gift animation error; using static icon:',error);
+            container.innerHTML=founderGiftFallbackMarkup();container.style.display='inline-flex';
+            founderGiftDocumentId=normalizedId;
             founderGiftFailedDocumentId=normalizedId;
             founderGiftFailedAt=Date.now();
         }finally{
@@ -1146,7 +1183,7 @@ function switchTab(id,el){
     document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
     document.getElementById('screen-'+id).classList.add('active');el.classList.add('active');
     clearInterval(pollAdminInterval);clearInterval(pollProfileInterval);clearInterval(pollAddInterval);
-    if(id==='home'){loadStats();loadRecent();loadHomePersonalSummary()}
+    if(id==='home'){loadStats();loadRecent()}
     if(id==='catalog')loadCatalog();
     if(id==='watchlist')loadWatchlistScreen();
     if(id==='profile'){
@@ -1216,11 +1253,24 @@ async function checkLink(btn){
     }catch(e){showToast(t('networkError'),'error')}
     finally{btn.disabled=false;btn.innerText=t('checkButton')}
 }
+async function loadSavedProjectIds(){
+    try{
+        const response=await fetch('/api/watchlist',{headers:getHeaders(),cache:'no-store'});
+        if(!response.ok)return;
+        const data=await response.json();
+        const items=Array.isArray(data.items)?data.items:[];
+        watchlistProjectIds=new Set(items.map(item=>Number(item.id)).filter(Number.isFinite));
+    }catch(error){console.debug('Could not preload saved project IDs:',error)}
+}
 async function loadCatalog(){
     try{
-        const r=await fetch('/api/catalog');if(!r.ok)throw new Error('Catalog request failed');
-        const d=await r.json();catalogProjectsData=Array.isArray(d)?d:[];filterCatalog();
-    }catch(e){showToast(t('loadingCatalogError'),'error')}
+        const [catalogResponse]=await Promise.all([
+            fetch('/api/catalog'),
+            loadSavedProjectIds()
+        ]);
+        if(!catalogResponse.ok)throw new Error('Catalog request failed');
+        const data=await catalogResponse.json();catalogProjectsData=Array.isArray(data)?data:[];filterCatalog();
+    }catch(error){showToast(t('loadingCatalogError'),'error')}
 }
 async function submitProject(btn){
     const title=document.getElementById('add-title').value.trim();
@@ -1970,7 +2020,6 @@ async function toggleWatchProject(projectId,button){
         showToast(action==='add'?t('savedAdded'):t('savedRemoved'));
         if(document.getElementById('screen-catalog')?.classList.contains('active'))filterCatalog();
         if(document.getElementById('screen-watchlist')?.classList.contains('active'))loadWatchlistScreen();
-        loadHomePersonalSummary();
     }catch(error){console.error('Watchlist action error:',error);showToast(localizeBackendMessage(error.message,'requestFailed'),'error')}
     finally{if(button)button.disabled=false}
 }
@@ -1983,37 +2032,27 @@ async function trackProjectView(projectId){
     }catch(error){console.debug('Project view was not recorded:',error)}
 }
 
-function openWatchlistFromHome(){
-    const nav=[...document.querySelectorAll('.nav-item')].find(item=>item.getAttribute('onclick')?.includes("switchTab('watchlist'"));
-    if(nav)switchTab('watchlist',nav);
-}
-
-async function loadHomePersonalSummary(){
-    const box=document.getElementById('home-personal-summary');
-    const text=document.getElementById('home-personal-summary-text');
-    if(!box||!text)return;
-    try{
-        const [savedResponse,notificationResponse]=await Promise.all([
-            fetch('/api/watchlist',{headers:getHeaders(),cache:'no-store'}),
-            fetch('/api/notifications?limit=1',{headers:getHeaders(),cache:'no-store'})
-        ]);
-        if(!savedResponse.ok||!notificationResponse.ok){box.style.display='none';return}
-        const saved=await savedResponse.json();
-        const notifications=await notificationResponse.json();
-        const items=Array.isArray(saved.items)?saved.items:[];
-        watchlistProjectIds=new Set(items.map(item=>Number(item.id)).filter(Number.isFinite));
-        unreadNotificationCount=Number(notifications.unread_count||0);
-        box.style.display='block';
-        text.textContent=`${t('savedShort')}: ${items.length} · ${t('notificationsUnread')}: ${unreadNotificationCount}`;
-    }catch(error){box.style.display='none'}
+function renderSavedProject(item){
+    const id=Number(item.id);
+    const rawLink=String(item.link||'').replace(/^@/,'');
+    const telegramUrl=rawLink?'https://t.me/'+encodeURIComponent(rawLink):'#';
+    const category=getProjectType(item.category);
+    const topic=item.topic?String(t('topic'+String(item.topic).charAt(0).toUpperCase()+String(item.topic).slice(1))||item.topic):'';
+    const chips=[category,topic].filter(Boolean).map(value=>`<span class="saved-project-chip">${escapeHTML(value)}</span>`).join('');
+    const status=[];
+    if(item.telegram_verified)status.push(`<span class="saved-project-chip verified">✓ ${escapeHTML(t('telegramBadge'))}</span>`);
+    if(item.is_official)status.push(`<span class="saved-project-chip official">◆ ${escapeHTML(t('officialBadge'))}</span>`);
+    const label=t('removeSaved');
+    return `<article class="saved-project-row"><a class="saved-project-main" href="${escapeHTML(telegramUrl)}" target="_blank" rel="noopener noreferrer" onclick="trackProjectView(${id})"><span class="saved-project-title">${escapeHTML(item.title||item.link||'')}</span><span class="saved-project-link">${escapeHTML(item.link||'')}</span><span class="saved-project-meta">${chips}${status.join('')}</span></a><button class="saved-project-remove" type="button" onclick="toggleWatchProject(${id},this)" aria-label="${escapeHTML(label)}" title="${escapeHTML(label)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11A1.5 1.5 0 0 1 19 5v16l-7-4-7 4V5a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M9 10h6"/></svg></button></article>`;
 }
 
 async function loadWatchlistScreen(){
     const list=document.getElementById('watchlist-list');
     const notificationsList=document.getElementById('notifications-list');
+    const notificationsSection=document.getElementById('watchlist-notifications-section');
     if(!list||!notificationsList)return;
     list.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
-    notificationsList.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
+    if(notificationsSection)notificationsSection.style.display='none';
     try{
         const [savedResponse,notificationResponse]=await Promise.all([
             fetch('/api/watchlist',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)}),
@@ -2026,22 +2065,24 @@ async function loadWatchlistScreen(){
         const savedItems=Array.isArray(savedData.items)?savedData.items:[];
         watchlistProjectIds=new Set(savedItems.map(item=>Number(item.id)).filter(Number.isFinite));
         const count=document.getElementById('watchlist-count');
-        if(count)count.textContent=`${savedItems.length} ${t('savedShort').toLowerCase()}`;
-        list.innerHTML=savedItems.length?savedItems.map(item=>renderProjectCard(item,false)+`<div class="card" style="margin-top:-8px"><button class="watch-action" type="button" onclick="toggleWatchProject(${Number(item.id)},this)">${escapeHTML(t('removeSaved'))}</button></div>`).join(''):`<div class="empty-state">${escapeHTML(t('noSavedProjects'))}</div>`;
+        if(count)count.textContent=`${savedItems.length} ${t('savedCountLabel')}`;
+        list.innerHTML=savedItems.length?savedItems.map(renderSavedProject).join(''):`<div class="empty-state">${escapeHTML(t('noSavedProjects'))}</div>`;
+
         const notifications=Array.isArray(notificationData.notifications)?notificationData.notifications:[];
         unreadNotificationCount=Number(notificationData.unread_count||0);
         const notificationCount=document.getElementById('notification-count');
-        if(notificationCount)notificationCount.textContent=`${t('notificationsUnread')}: ${unreadNotificationCount}`;
-        notificationsList.innerHTML=notifications.length?notifications.map(item=>{
+        if(notificationCount)notificationCount.textContent=unreadNotificationCount?`${t('notificationsUnread')}: ${unreadNotificationCount}`:'';
+        notificationsList.innerHTML=notifications.map(item=>{
             const date=item.created_at?formatMoscowDateTime(item.created_at):'';
             const project=item.project_title||item.project_link||'';
-            return `<div class="card notification-card ${item.read_at?'':'unread'}"><b>${escapeHTML(item.title||t('notificationsTitle'))}</b><div style="font-size:13px;color:#bbb">${escapeHTML(item.message||'')}</div>${project?`<div style="font-size:12px;color:#777">${escapeHTML(project)}</div>`:''}<div class="notification-meta">${escapeHTML(date)}</div>${item.read_at?'':`<button class="watch-action" type="button" onclick="markNotificationRead(${Number(item.id)},this)">${escapeHTML(t('markRead'))}</button>`}</div>`;
-        }).join(''):`<div class="empty-state">${escapeHTML(t('noNotifications'))}</div>`;
-        loadHomePersonalSummary();
+            return `<article class="watch-notification-row ${item.read_at?'':'unread'}"><span class="watch-notification-dot" aria-hidden="true"></span><div><div class="watch-notification-title">${escapeHTML(item.title||t('notificationsTitle'))}</div><div class="watch-notification-message">${escapeHTML(item.message||project||'')}</div><div class="watch-notification-footer"><span class="watch-notification-date">${escapeHTML(date)}</span>${item.read_at?'':`<button class="watch-notification-read" type="button" onclick="markNotificationRead(${Number(item.id)},this)">${escapeHTML(t('markRead'))}</button>`}</div></div></article>`;
+        }).join('');
+        if(notificationsSection)notificationsSection.style.display=notifications.length?'block':'none';
     }catch(error){
         console.error('Load watchlist screen error:',error);
         list.innerHTML=`<div class="empty-state">${escapeHTML(error.message||t('watchlistLoadError'))}</div>`;
-        notificationsList.innerHTML=`<div class="empty-state">${escapeHTML(t('notificationsLoadError'))}</div>`;
+        notificationsList.innerHTML='';
+        if(notificationsSection)notificationsSection.style.display='none';
     }
 }
 
@@ -2067,37 +2108,22 @@ async function markAllNotificationsRead(){
     }catch(error){showToast(error.message||t('notificationReadError'),'error')}
 }
 
-async function loadProjectChanges(projectId,button){
-    const id=Number(projectId);
-    const card=button?.closest('.card');
-    const target=card?.querySelector(`#project-history-${id}`);
-    if(!target||!Number.isInteger(id)||id<=0)return;
-    if(target.style.display==='block'){target.style.display='none';return}
-    target.style.display='block';
-    target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
-    try{
-        const response=await fetch(`/api/project/changes?project_id=${id}&limit=20`,{cache:'no-store',signal:AbortSignal.timeout(12000)});
-        let data=[];try{data=await response.json()}catch(error){}
-        if(!response.ok)throw new Error(data.error||t('historyLoadError'));
-        if(!Array.isArray(data)||!data.length){target.innerHTML=`<div class="notification-meta">${escapeHTML(t('noProjectHistory'))}</div>`;return}
-        const labels={title:t('historyTitle'),link:t('historyLink'),description:t('historyDescription'),website:t('historyWebsite'),topic:t('historyTopic'),moderation_status:t('historyModeration'),ownership_status:t('historyOwnership'),is_official:'OFFICIAL RESOURCE',telegram_verified:'Telegram Verified',linkcheck_badge_manual:'LINKCHECK'};
-        target.innerHTML=data.map(item=>{
-            let changed=[];try{changed=JSON.parse(item.changed_fields||'[]')}catch(error){}
-            const fields=Array.isArray(changed)?changed.map(key=>labels[key]||key).join(', '):'';
-            return `<div class="notification-card" style="padding:9px 0;border-bottom:1px solid #292929"><div style="font-size:12px;color:#ddd">${escapeHTML(fields||t('projectHistory'))}</div><div class="notification-meta">${escapeHTML(item.created_at?formatMoscowDateTime(item.created_at):'')}</div></div>`;
-        }).join('');
-    }catch(error){target.innerHTML=`<div class="notification-meta">${escapeHTML(error.message||t('historyLoadError'))}</div>`}
-}
-
 async function loadOwnerAnalytics(){
     const target=document.getElementById('owner-analytics-content');
-    if(!target)return;
+    const card=document.getElementById('owner-analytics');
+    if(!target||!card)return;
+    card.style.display='none';
     target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
     try{
         const response=await fetch('/api/owner/analytics',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
         let data={};try{data=await response.json()}catch(error){}
         if(!response.ok)throw new Error(data.error||t('ownerAnalyticsError'));
-        if(!data.projects_count){target.innerHTML=`<div class="empty-state">${escapeHTML(t('ownerNoProjects'))}</div>`;return}
+        if(!Number(data.projects_count||0)){
+            card.style.display='none';
+            target.innerHTML='';
+            return;
+        }
+        card.style.display='block';
         const metrics=[
             [data.total_views,t('ownerViews')],[data.views_7d,t('ownerViews7d')],
             [data.reports,t('ownerReports')],[data.pending_reports,t('ownerPendingReports')],
@@ -2117,12 +2143,13 @@ async function loadOwnerAnalytics(){
         target.innerHTML=`<div class="owner-metrics">${metrics.map(([value,label])=>`<div class="owner-metric"><strong>${Number(value||0)}</strong><span>${escapeHTML(label)}</span></div>`).join('')}</div><div style="font-size:12px;color:#aaa;margin-top:17px">${escapeHTML(t('ownerViewsDaily'))}</div><div class="owner-daily">${bars}</div><div style="font-size:12px;color:#aaa;margin:16px 0 4px">${escapeHTML(t('ownerProjects'))} · ${Number(data.projects_count)}</div>${projects}`;
     }catch(error){
         console.error('Owner analytics error:',error);
-        target.innerHTML=`<div class="empty-state">${escapeHTML(error.message||t('ownerAnalyticsError'))}</div>`;
+        card.style.display='none';
+        target.innerHTML='';
     }
 }
 
 setLanguage(currentLanguage);
-initUser().then(()=>{loadStats();loadRecent();loadHomePersonalSummary()});
+initUser().then(()=>{loadStats();loadRecent()});
 refreshFounderProfile();
 founderRefreshInterval=setInterval(refreshFounderProfile,60000);
 </script>
