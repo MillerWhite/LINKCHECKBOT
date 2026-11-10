@@ -165,6 +165,8 @@ dp = Dispatcher()
 tg_client = None
 tg_ready = False
 tg_start_error = None
+tg_session_owner_id = None
+PLUS_MT_PROTO_CAPTURE_OWNER_IDS = set()
 
 founder_entity_cache = None
 founder_entity_cache_time = 0
@@ -5682,6 +5684,8 @@ async def handle_business_connection(connection):
     logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s rights_present=%s rights_source=%s missing=%s",
                  owner_id, connection_id, is_enabled, rights_obj is not None,
                  "raw_bot_api" if isinstance(connection, dict) else "aiogram_model", missing)
+    if is_enabled and tg_ready and tg_session_owner_id == owner_id:
+        await register_plus_mtproto_message_capture(owner_id)
 
 
 async def fetch_business_connection_raw(connection_id: str):
@@ -5997,6 +6001,8 @@ async def register_plus_mtproto_message_capture(owner_tg_id: int):
     if tg_client is None or events is None:
         logging.info("LINKCHECK PLUS MTProto backup unavailable: Telethon events are not installed")
         return
+    if int(owner_tg_id) in PLUS_MT_PROTO_CAPTURE_OWNER_IDS:
+        return
     with db_connect() as conn:
         known_connections = conn.execute("SELECT connection_id FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1",
                                           (int(owner_tg_id),)).fetchall()
@@ -6045,6 +6051,7 @@ async def register_plus_mtproto_message_capture(owner_tg_id: int):
         except Exception:
             logging.exception("LINKCHECK PLUS MTProto backup handler failed owner=%s", owner_tg_id)
 
+    PLUS_MT_PROTO_CAPTURE_OWNER_IDS.add(int(owner_tg_id))
     logging.info("LINKCHECK PLUS MTProto backup listener enabled owner=%s known_business_connections=%s", owner_tg_id, len(known_connections))
 
 async def plus_retention_cleanup_loop():
@@ -6327,7 +6334,7 @@ async def start_web_server():
 # ============================================================
 
 async def start_telegram_checker():
-    global tg_client, tg_ready, tg_start_error
+    global tg_client, tg_ready, tg_start_error, tg_session_owner_id
     if not TG_API_ID or not TG_API_HASH:
         tg_start_error = "TG_API_ID или TG_API_HASH не настроены"
         logging.warning(
@@ -6353,6 +6360,7 @@ async def start_telegram_checker():
         await tg_client.start()
         tg_ready = True
         me = await tg_client.get_me()
+        tg_session_owner_id = int(me.id)
         logging.info("LINKCHECK Telethon session identity: id=%s username=%s",
                      getattr(me, "id", None), getattr(me, "username", None))
         await register_plus_mtproto_message_capture(int(me.id))
