@@ -45,7 +45,7 @@ from aiogram.types import (
 from dotenv import load_dotenv
 
 try:
-    from telethon import TelegramClient, functions
+    from telethon import TelegramClient, functions, events
     from telethon.errors import FloodWaitError, RPCError
     from telethon.tl.types import (
         User,
@@ -56,6 +56,7 @@ try:
 except ImportError:
     TelegramClient = None
     functions = None
+    events = None
     FloodWaitError = RPCError = Exception
     User = Chat = Channel = None
     EmojiStatusCollectible = None
@@ -1261,6 +1262,21 @@ def init_db():
             )
         """)
         ensure_column(conn, "plus_business_messages", "media_path", "TEXT")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS plus_business_chats (
+                connection_id TEXT NOT NULL,
+                owner_tg_id INTEGER NOT NULL,
+                chat_id INTEGER NOT NULL,
+                chat_title TEXT,
+                first_seen_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(connection_id, chat_id)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plus_business_chats_owner "
+            "ON plus_business_chats(owner_tg_id, chat_id)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
             "ON plus_business_messages(owner_tg_id, updated_at DESC)"
@@ -5655,6 +5671,7 @@ async def handle_business_connection(connection):
                 (connection_id,)
             ).fetchall()]
             conn.execute("DELETE FROM plus_business_messages WHERE connection_id=?", (connection_id,))
+            conn.execute("DELETE FROM plus_business_chats WHERE connection_id=?", (connection_id,))
     for media_path in removed_media_paths:
         try:
             if media_path and os.path.isfile(media_path):
@@ -5749,6 +5766,12 @@ async def handle_business_message(message: Message):
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
              content, message.caption or "", media_type, media_file_id,
              old["media_path"] if old else None, int(bool(message.out)), now_iso())
+        )
+        conn.execute(
+            "INSERT INTO plus_business_chats(connection_id,owner_tg_id,chat_id,chat_title,first_seen_at,updated_at) "
+            "VALUES(?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id) DO UPDATE SET "
+            "owner_tg_id=excluded.owner_tg_id,chat_title=excluded.chat_title,updated_at=excluded.updated_at",
+            (connection_id, connection["owner_tg_id"], message.chat.id, chat_title, now_iso(), now_iso())
         )
         conn.execute(
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
