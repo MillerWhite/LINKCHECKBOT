@@ -2232,7 +2232,13 @@ async function refreshPlusStatus(){
     finally{if(button){button.disabled=false;button.textContent=original;}}
 }
 let lastPlusStatusData=null;
-async function loadPlusStatus(){
+let plusStatusRequest=null;
+function loadPlusStatus(){
+    if(plusStatusRequest)return plusStatusRequest;
+    plusStatusRequest=loadPlusStatusInternal().finally(()=>{plusStatusRequest=null;});
+    return plusStatusRequest;
+}
+async function loadPlusStatusInternal(){
     const status=document.getElementById('plus-status-value');
     if(!status)return false;
     let data;

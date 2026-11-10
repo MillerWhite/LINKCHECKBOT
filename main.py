@@ -5161,8 +5161,9 @@ async def api_plus_status(request):
 
     if connection and bot:
         try:
-            live_connection = await bot.get_business_connection(connection["connection_id"])
-            # Reuse the normal persistence path; it also updates disabled state.
+            # Use raw Bot API JSON. aiogram may parse a newer BusinessBotRights
+            # response into an older model and discard fields it does not know.
+            live_connection = await fetch_business_connection_raw(connection["connection_id"])
             await handle_business_connection(live_connection)
             with db_connect() as conn:
                 connection = conn.execute(
@@ -5170,16 +5171,19 @@ async def api_plus_status(request):
                     "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
                 ).fetchone()
         except Exception as exc:
-            logging.warning("LINKCHECK PLUS: Business status refresh failed for owner=%s: %s", owner_id, exc)
+            logging.warning("LINKCHECK PLUS: raw Bot API Business refresh failed owner=%s connection=%s error=%s; retaining stored snapshot",
+                            owner_id, connection["connection_id"], exc)
 
-    # MTProto can enumerate connected bots only for the same user whose
-    # Telethon session is active. Keep it bounded so a slow Telegram RPC cannot
-    # make the whole PLUS status endpoint time out.
-    try:
-        mtproto_business = await asyncio.wait_for(inspect_owner_business_bot(owner_id), timeout=7.0)
-    except asyncio.TimeoutError:
-        logging.warning("LINKCHECK PLUS: MTProto Business inspection timed out for owner=%s", owner_id)
-        mtproto_business = None
+    # Bot API is authoritative once it has an enabled BusinessConnection.
+    # Avoid an unnecessary 7-second MTProto call on every 15-second UI refresh.
+    # MTProto is only a fallback when no enabled Bot API connection is known.
+    mtproto_business = None
+    if not (connection and bool(connection["is_enabled"])):
+        try:
+            mtproto_business = await asyncio.wait_for(inspect_owner_business_bot(owner_id), timeout=7.0)
+        except asyncio.TimeoutError:
+            logging.warning("LINKCHECK PLUS: MTProto Business inspection timed out for owner=%s", owner_id)
+            mtproto_business = {"available": False, "reason": "mtproto_timeout"}
 
     plans = plus_plans()
     known_connection = connection is not None
@@ -5502,11 +5506,27 @@ def business_sender_label(message: Message) -> str:
 
 
 async def handle_business_connection(connection):
-    owner_id = int(connection.user.id)
-    # Bot API may omit denied optional-true fields. Normalize them to explicit
-    # False values so the Mini App can distinguish verified missing rights
-    # from an unavailable permissions payload.
-    rights = normalize_plus_business_rights(connection.rights) if connection.rights else {}
+    """Persist a BusinessConnection from aiogram or an unmodified Bot API JSON response."""
+    if isinstance(connection, dict):
+        user_data = connection.get("user") or {}
+        owner_id = int(user_data.get("id") or 0)
+        connection_id = str(connection.get("id") or "")
+        user_chat_id = int(connection.get("user_chat_id") or 0)
+        is_enabled = bool(connection.get("is_enabled"))
+        rights_obj = connection.get("rights")
+    else:
+        owner_id = int(connection.user.id)
+        connection_id = str(connection.id)
+        user_chat_id = int(connection.user_chat_id)
+        is_enabled = bool(connection.is_enabled)
+        rights_obj = connection.rights
+
+    if not owner_id or not connection_id or not user_chat_id:
+        raise ValueError("BusinessConnection payload is missing owner, connection_id or user_chat_id")
+
+    # Raw Bot API JSON is used during status refresh so fields unknown to an
+    # older aiogram/Pydantic model cannot silently become False permissions.
+    rights = normalize_plus_business_rights(rights_obj) if rights_obj is not None else {}
     removed_media_paths = []
     with db_connect() as conn:
         conn.execute(
@@ -5514,15 +5534,15 @@ async def handle_business_connection(connection):
             "VALUES(?,?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET "
             "owner_tg_id=excluded.owner_tg_id,user_chat_id=excluded.user_chat_id,is_enabled=excluded.is_enabled,"
             "rights_json=excluded.rights_json,updated_at=excluded.updated_at",
-            (connection.id, owner_id, connection.user_chat_id, int(connection.is_enabled),
+            (connection_id, owner_id, user_chat_id, int(is_enabled),
              json.dumps(rights, ensure_ascii=False), now_iso(), now_iso())
         )
-        if not connection.is_enabled:
+        if not is_enabled:
             removed_media_paths = [row["media_path"] for row in conn.execute(
                 "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND media_path IS NOT NULL",
-                (connection.id,)
+                (connection_id,)
             ).fetchall()]
-            conn.execute("DELETE FROM plus_business_messages WHERE connection_id=?", (connection.id,))
+            conn.execute("DELETE FROM plus_business_messages WHERE connection_id=?", (connection_id,))
     for media_path in removed_media_paths:
         try:
             if media_path and os.path.isfile(media_path):
@@ -5530,15 +5550,37 @@ async def handle_business_connection(connection):
         except OSError:
             logging.exception("LINKCHECK PLUS: could not remove disconnected media file")
     missing = [key for key in PLUS_REQUIRED_BUSINESS_RIGHTS if not rights.get(key, False)] if rights else list(PLUS_REQUIRED_BUSINESS_RIGHTS)
-    logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s rights_present=%s missing=%s",
-                 owner_id, connection.id, bool(connection.is_enabled), bool(connection.rights), missing)
+    logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s rights_present=%s rights_source=%s missing=%s",
+                 owner_id, connection_id, is_enabled, rights_obj is not None,
+                 "raw_bot_api" if isinstance(connection, dict) else "aiogram_model", missing)
+
+
+async def fetch_business_connection_raw(connection_id: str):
+    """Fetch BusinessConnection as raw JSON, bypassing aiogram model field filtering."""
+    if not connection_id:
+        raise ValueError("Business connection ID is empty")
+    timeout = aiohttp.ClientTimeout(total=8)
+    endpoint = f"https://api.telegram.org/bot{BOT_TOKEN}/getBusinessConnection"
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(endpoint, json={"business_connection_id": str(connection_id)}) as response:
+            try:
+                payload = await response.json(content_type=None)
+            except Exception as exc:
+                raise RuntimeError(f"Telegram returned non-JSON response (HTTP {response.status})") from exc
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        description = payload.get("description", "unknown Telegram API error") if isinstance(payload, dict) else "invalid response"
+        raise RuntimeError(f"getBusinessConnection failed: {description}")
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise RuntimeError("getBusinessConnection returned no BusinessConnection object")
+    return result
 
 
 async def refresh_business_connection(connection_id: str):
-    """Fetch a Business connection from Bot API when its update was missed."""
-    if not connection_id or not bot:
+    """Fetch and persist a Business connection using the raw Bot API response."""
+    if not connection_id:
         return None
-    live_connection = await bot.get_business_connection(connection_id)
+    live_connection = await fetch_business_connection_raw(connection_id)
     await handle_business_connection(live_connection)
     return live_connection
 
