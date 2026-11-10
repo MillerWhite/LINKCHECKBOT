@@ -103,3 +103,12 @@ LINKCHECK PLUS — silent Business event routing hardening (10.11.2026)
 - Incoming messages are stored only; outgoing messages from the business account are ignored by the monitoring archive.
 - Full Business permissions remain documented, including profile, stories, gifts and Stars rights. All-private-chats access is the selected chat scope; rights do not replace that setting.
 - Static Python syntax validation passed. aiogram is not installed in the build environment, so runtime dispatch and live Telegram/Bothost delivery have not been verified here.
+
+
+LINKCHECK PLUS — Business connection status synchronization fix (10.11.2026)
+- `/api/plus/status` now revalidates a previously stored Business connection through Telegram Bot API `getBusinessConnection` and persists the returned enabled/disabled state instead of trusting a stale SQLite flag.
+- If a Business message arrives before its `business_connection` update was persisted, LINKCHECK now uses the message's `business_connection_id` to fetch and store the connection before deciding whether to archive the message.
+- Removed unsolicited Business connection confirmation messages; connection changes are persisted silently.
+- Mini App refreshes status automatically every 15 seconds while the PLUS modal is open.
+- If LINKCHECK has never received or stored a connection ID, the Mini App shows “Checking connection” instead of falsely displaying “Not connected”. Telegram Bot API cannot enumerate all connected business bots; `getBusinessConnection` requires a connection ID previously received in an update.
+- Live verification still requires a deployment and the user's connected Telegram Business account.

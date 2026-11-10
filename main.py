@@ -4979,21 +4979,44 @@ async def api_plus_status(request):
     user = authenticated_user(request)
     if not user:
         return json_error("Telegram-авторизация не прошла проверку", 401)
-    upsert_user(user["id"], user.get("username"))
-    sub = plus_subscription_for(user["id"])
+    owner_id = int(user["id"])
+    upsert_user(owner_id, user.get("username"))
+    sub = plus_subscription_for(owner_id)
+
+    # The Business connection update may have been consumed while the app was
+    # restarting or before the current DB was initialized. Revalidate a known
+    # connection against Telegram instead of trusting a stale SQLite flag.
     with db_connect() as conn:
-        payments = conn.execute("SELECT plan_code, amount_stars, paid_at, expires_at FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10", (user["id"],)).fetchall()
-        connection = conn.execute("SELECT is_enabled, connected_at, updated_at FROM plus_business_connections WHERE owner_tg_id=? ORDER BY is_enabled DESC, updated_at DESC LIMIT 1", (user["id"],)).fetchone()
-        trial = conn.execute("SELECT expires_at FROM plus_trial_claims WHERE tg_id=?", (user["id"],)).fetchone()
+        payments = conn.execute("SELECT plan_code, amount_stars, paid_at, expires_at FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10", (owner_id,)).fetchall()
+        connection = conn.execute(
+            "SELECT connection_id, is_enabled, connected_at, updated_at FROM plus_business_connections "
+            "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
+        ).fetchone()
+        trial = conn.execute("SELECT expires_at FROM plus_trial_claims WHERE tg_id=?", (owner_id,)).fetchone()
+
+    if connection and bot:
+        try:
+            live_connection = await bot.get_business_connection(connection["connection_id"])
+            # Reuse the normal persistence path; it also updates disabled state.
+            await handle_business_connection(live_connection)
+            with db_connect() as conn:
+                connection = conn.execute(
+                    "SELECT connection_id, is_enabled, connected_at, updated_at FROM plus_business_connections "
+                    "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
+                ).fetchone()
+        except Exception as exc:
+            logging.warning("LINKCHECK PLUS: Business status refresh failed for owner=%s: %s", owner_id, exc)
+
     plans = plus_plans()
+    known_connection = connection is not None
     return web.json_response({
         "payments_enabled": PLUS_PAYMENTS_ENABLED,
-        "is_admin": user["id"] in ADMIN_IDS,
+        "is_admin": owner_id in ADMIN_IDS,
         "trial_available": trial is None,
         "trial_days": PLUS_TEST_DAYS,
         "plans": {key: {"title": value["title"], "days": value["days"], "stars": value["stars"], "base_stars": value["base_stars"], "discount_percent": value["discount_percent"]} for key, value in plans.items()},
         "subscription": ({"active": bool(sub["active"]), "plan": sub.get("plan_code"), "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")} if sub else None),
-        "business_connection": ({"connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"]} if connection else {"connected": False}),
+        "business_connection": ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"]} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None}),
         "payments": [dict(row) for row in payments],
         "message_retention_days": PLUS_MESSAGE_RETENTION_DAYS
     }, headers={"Cache-Control": "no-store"})
@@ -5268,26 +5291,17 @@ async def handle_business_connection(connection):
                 os.remove(media_path)
         except OSError:
             logging.exception("LINKCHECK PLUS: could not remove disconnected media file")
-    if connection.is_enabled:
-        sub = plus_subscription_for(owner_id)
-        note = ("Подключение Telegram Business активно. LINKCHECK PLUS готов отслеживать доставленные боту события."
-                if sub and sub["active"] else
-                "Telegram Business подключён. Для начала мониторинга активируйте LINKCHECK PLUS в Mini App.")
-        all_rights = (
-            "can_reply", "can_read_messages", "can_delete_sent_messages", "can_delete_all_messages",
-            "can_edit_name", "can_edit_bio", "can_edit_profile_photo", "can_edit_username",
-            "can_change_gift_settings", "can_view_gifts_and_stars", "can_convert_gifts_to_stars",
-            "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories"
-        )
-        missing_rights = [right for right in all_rights if not rights.get(right)]
-        if missing_rights:
-            note += "\n\n<b>Не все Business-права выданы.</b> Для полного набора функций LINKCHECK открой настройки подключённого бота и включи все доступные разрешения. Отсутствуют: " + ", ".join(missing_rights)
-        else:
-            note += "\n\nВсе доступные Business-права выданы."
-        try:
-            await bot.send_message(connection.user_chat_id, note)
-        except Exception:
-            logging.exception("Не удалось отправить уведомление о Business connection владельцу %s", owner_id)
+    logging.info("LINKCHECK PLUS: Business connection synchronized owner=%s connection=%s enabled=%s",
+                 owner_id, connection.id, bool(connection.is_enabled))
+
+
+async def refresh_business_connection(connection_id: str):
+    """Fetch a Business connection from Bot API when its update was missed."""
+    if not connection_id or not bot:
+        return None
+    live_connection = await bot.get_business_connection(connection_id)
+    await handle_business_connection(live_connection)
+    return live_connection
 
 
 async def handle_business_message(message: Message):
@@ -5301,8 +5315,18 @@ async def handle_business_message(message: Message):
             (connection_id,)
         ).fetchone()
     if not connection:
-        logging.warning("LINKCHECK PLUS: business_message for unknown/disabled connection %s", connection_id)
-        return
+        try:
+            await refresh_business_connection(connection_id)
+        except Exception:
+            logging.exception("LINKCHECK PLUS: could not recover unknown Business connection %s", connection_id)
+        with db_connect() as conn:
+            connection = conn.execute(
+                "SELECT * FROM plus_business_connections WHERE connection_id=? AND is_enabled=1",
+                (connection_id,)
+            ).fetchone()
+        if not connection:
+            logging.warning("LINKCHECK PLUS: business_message for unknown/disabled connection %s", connection_id)
+            return
     sub = plus_subscription_for(int(connection["owner_tg_id"]))
     if not sub or not sub["active"]:
         logging.info("LINKCHECK PLUS: skipped message because subscription is inactive owner=%s", connection["owner_tg_id"])
