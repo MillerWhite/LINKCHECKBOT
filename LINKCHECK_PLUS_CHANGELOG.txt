@@ -112,3 +112,11 @@ LINKCHECK PLUS — Business connection status synchronization fix (10.11.2026)
 - Mini App refreshes status automatically every 15 seconds while the PLUS modal is open.
 - If LINKCHECK has never received or stored a connection ID, the Mini App shows “Checking connection” instead of falsely displaying “Not connected”. Telegram Bot API cannot enumerate all connected business bots; `getBusinessConnection` requires a connection ID previously received in an update.
 - Live verification still requires a deployment and the user's connected Telegram Business account.
+
+
+LINKCHECK PLUS — исправление ручного обновления и проверки Business (10.11.2026)
+- Кнопка «Обновить статус» получила отдельный обработчик: блокируется на время запроса, показывает «Обновляем…» и выводит результат.
+- Если Bot API ещё не сохранил connection_id, для аккаунта владельца выполняется MTProto account.getConnectedBots через Telethon-сессию; сравнивается bot_id текущего LINKCHECK.
+- Проверка MTProto выполняется только если Telethon-сессия принадлежит тому же Telegram ID, который открыл Mini App. Состояние чужих аккаунтов этой сессией не определяется.
+- Убрано бесконечное состояние «Проверяем подключение…»: неподтверждённый статус отображается как «Не удалось подтвердить подключение».
+- Проверяются все 14 ожидаемых Business-разрешений; если часть отсутствует, интерфейс показывает отдельное предупреждение и перечисляет отсутствующие права в подсказке. MTProto-проверка выполняется также при наличии старой Bot API-записи, чтобы сверять актуальное состояние.

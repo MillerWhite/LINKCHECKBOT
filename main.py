@@ -4975,6 +4975,39 @@ def plus_connection_count(tg_id: int) -> int:
         row = conn.execute("SELECT COUNT(*) AS n FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1", (tg_id,)).fetchone()
     return int(row["n"] if row else 0)
 
+async def inspect_owner_business_bot(owner_id: int):
+    """Inspect connected business bots through the owner's own MTProto session.
+
+    The Telethon session belongs to the project owner, so it must never be used
+    to claim the connection state of a different Mini App user.
+    """
+    if not tg_ready or tg_client is None or functions is None:
+        return None
+    try:
+        me = await tg_client.get_me()
+        if not me or int(me.id) != int(owner_id):
+            return None
+        request_type = getattr(getattr(functions, "account", None), "GetConnectedBotsRequest", None)
+        if request_type is None:
+            logging.error("LINKCHECK PLUS: Telethon does not expose account.GetConnectedBotsRequest")
+            return None
+        result = await tg_client(request_type())
+        expected_bot_id = int(BOT_TOKEN.split(":", 1)[0]) if BOT_TOKEN and ":" in BOT_TOKEN else 0
+        for item in (getattr(result, "connected_bots", None) or []):
+            if int(getattr(item, "bot_id", 0) or 0) == expected_bot_id:
+                rights_obj = getattr(item, "rights", None)
+                if rights_obj is not None and hasattr(rights_obj, "to_dict"):
+                    rights = rights_obj.to_dict()
+                elif rights_obj is not None and hasattr(rights_obj, "__dict__"):
+                    rights = {key: value for key, value in vars(rights_obj).items() if not key.startswith("_")}
+                else:
+                    rights = {}
+                return {"connected": True, "rights": rights}
+        return {"connected": False, "rights": {}}
+    except Exception as exc:
+        logging.warning("LINKCHECK PLUS: MTProto Business inspection failed for owner=%s: %s", owner_id, exc)
+        return None
+
 async def api_plus_status(request):
     user = authenticated_user(request)
     if not user:
@@ -4989,7 +5022,7 @@ async def api_plus_status(request):
     with db_connect() as conn:
         payments = conn.execute("SELECT plan_code, amount_stars, paid_at, expires_at FROM plus_payments WHERE tg_id=? ORDER BY id DESC LIMIT 10", (owner_id,)).fetchall()
         connection = conn.execute(
-            "SELECT connection_id, is_enabled, connected_at, updated_at FROM plus_business_connections "
+            "SELECT connection_id, is_enabled, connected_at, updated_at, rights_json FROM plus_business_connections "
             "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
         ).fetchone()
         trial = conn.execute("SELECT expires_at FROM plus_trial_claims WHERE tg_id=?", (owner_id,)).fetchone()
@@ -5001,14 +5034,32 @@ async def api_plus_status(request):
             await handle_business_connection(live_connection)
             with db_connect() as conn:
                 connection = conn.execute(
-                    "SELECT connection_id, is_enabled, connected_at, updated_at FROM plus_business_connections "
+                    "SELECT connection_id, is_enabled, connected_at, updated_at, rights_json FROM plus_business_connections "
                     "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
                 ).fetchone()
         except Exception as exc:
             logging.warning("LINKCHECK PLUS: Business status refresh failed for owner=%s: %s", owner_id, exc)
 
+    # If Bot API has never delivered/stored the connection_id, the Bot API
+    # cannot enumerate the user's connected bots. For the project owner's own
+    # account, use account.getConnectedBots through that same user's Telethon
+    # session to verify the actual connection and permissions immediately.
+    mtproto_business = await inspect_owner_business_bot(owner_id)
+
     plans = plus_plans()
     known_connection = connection is not None
+    required_rights = ["can_reply", "can_read_messages", "can_delete_sent_messages", "can_delete_all_messages", "can_edit_name", "can_edit_bio", "can_edit_profile_photo", "can_edit_username", "can_change_gift_settings", "can_view_gifts_and_stars", "can_convert_gifts_to_stars", "can_transfer_and_upgrade_gifts", "can_transfer_stars", "can_manage_stories"]
+    stored_rights = {}
+    if connection and connection["rights_json"]:
+        try:
+            stored_rights = json.loads(connection["rights_json"])
+        except (TypeError, ValueError):
+            stored_rights = {}
+    business_payload = ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"], "source": "bot_api", "rights": stored_rights} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None, "source": None, "rights": {}})
+    if mtproto_business is not None:
+        business_payload = {"known": True, "connected": bool(mtproto_business["connected"]), "connected_at": connection["connected_at"] if connection else None, "updated_at": now_iso(), "source": "mtproto", "rights": mtproto_business.get("rights", {})}
+    business_payload["missing_rights"] = [right for right in required_rights if business_payload.get("connected") and not bool(business_payload.get("rights", {}).get(right, False))]
+
     return web.json_response({
         "payments_enabled": PLUS_PAYMENTS_ENABLED,
         "is_admin": owner_id in ADMIN_IDS,
@@ -5016,7 +5067,7 @@ async def api_plus_status(request):
         "trial_days": PLUS_TEST_DAYS,
         "plans": {key: {"title": value["title"], "days": value["days"], "stars": value["stars"], "base_stars": value["base_stars"], "discount_percent": value["discount_percent"]} for key, value in plans.items()},
         "subscription": ({"active": bool(sub["active"]), "plan": sub.get("plan_code"), "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")} if sub else None),
-        "business_connection": ({"known": True, "connected": bool(connection["is_enabled"]), "connected_at": connection["connected_at"], "updated_at": connection["updated_at"]} if known_connection else {"known": False, "connected": None, "connected_at": None, "updated_at": None}),
+        "business_connection": business_payload,
         "payments": [dict(row) for row in payments],
         "message_retention_days": PLUS_MESSAGE_RETENTION_DAYS
     }, headers={"Cache-Control": "no-store"})
