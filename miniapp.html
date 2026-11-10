@@ -200,6 +200,31 @@ input::placeholder,textarea::placeholder{color:#666}
 .privacy-modal{position:fixed;inset:0;z-index:2400;display:none;flex-direction:column;background:#080808}.privacy-modal.open{display:flex}.privacy-modal-header{height:58px;flex:0 0 58px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid #292929;background:#080808}.privacy-modal-title{font-size:13px;font-weight:800;letter-spacing:.4px}.privacy-modal-close{width:34px;height:34px;border:1px solid #333;border-radius:10px;background:#ffffff08;color:#fff;font-size:22px;line-height:1;cursor:pointer}.privacy-modal iframe{width:100%;height:calc(100% - 58px);border:0;background:#080808}
 @media(hover:none){.btn:hover,.btn-admin:hover{transform:none}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+.catalog-topic-label{display:inline-flex;margin:8px 0 2px;padding:4px 8px;border:1px solid #333;border-radius:20px;color:#aaa;font-size:10px}
+.project-history{margin-top:12px;padding-top:10px;border-top:1px solid #292929}
+.watch-toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:0 0 12px;flex-wrap:wrap}
+.watch-toolbar .btn-admin{flex:0 0 auto}
+.watch-action{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 10px;border:1px solid #444;border-radius:10px;background:#ffffff08;color:#ddd;font-size:11px;font-weight:800;cursor:pointer}
+.watch-action.saved{border-color:#e7e7e7;background:#fff;color:#050505}
+.notification-card{display:flex;flex-direction:column;gap:6px;border-left:2px solid #555}
+.notification-card.unread{border-left-color:#fff;background:#171717}
+.notification-meta{font-size:11px;color:#777}
+.owner-analytics{margin-top:18px}
+.owner-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.owner-metric{padding:13px;border:1px solid #292929;border-radius:12px;background:#0b0b0b;min-width:0}
+.owner-metric strong{display:block;font-size:22px;line-height:1.2}
+.owner-metric span{display:block;margin-top:5px;color:#888;font-size:11px;line-height:1.35}
+.owner-project-row{padding:12px 0;border-top:1px solid #252525;display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.owner-project-row span{color:#999;text-align:right;white-space:nowrap}
+.owner-daily{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;align-items:end;height:82px;margin:14px 0 6px}
+.owner-day{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:0}
+.owner-day-bar{width:100%;min-height:3px;border-radius:5px 5px 2px 2px;background:#bdbdbd;opacity:.85}
+.owner-day-label{font-size:9px;color:#777}
+#screen-watchlist .section-heading{margin:22px 0 10px;font-size:16px}
+.bottom-nav .nav-item{flex:1;min-width:0;padding-left:2px;padding-right:2px;font-size:9px}
+.bottom-nav .nav-item svg{width:21px;height:21px}
+@media(min-width:520px){.owner-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -219,6 +244,12 @@ input::placeholder,textarea::placeholder{color:#666}
         <div id="result-text" style="font-size:14px;color:var(--silver);line-height:1.6"></div>
     </div>
     <div class="stats-row"><div class="stat-box"><div class="stat-num" id="stat-projects">-</div><div class="stat-label" data-i18n="projects">Проектов</div></div></div>
+    <div id="home-personal-summary" class="card" style="display:none;padding:13px 15px;margin-top:-8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+            <div><b data-i18n="personalUpdatesTitle">Ваш LINKCHECK</b><div id="home-personal-summary-text" style="font-size:12px;color:#999;margin-top:5px"></div></div>
+            <button class="watch-action" type="button" onclick="openWatchlistFromHome()" data-i18n="openSaved">Открыть</button>
+        </div>
+    </div>
     <h2 data-i18n="recentChecks">Последние проверки</h2>
     <div id="recent-projects" class="recent-grid"><div class="empty-state" data-i18n="noProjects">Пока нет добавленных проектов</div></div>
     <div class="founder-card">
@@ -254,6 +285,17 @@ input::placeholder,textarea::placeholder{color:#666}
             <option value="badge" data-i18n="catalogStatusBadge">Бейдж LINKCHECK</option>
             <option value="none" data-i18n="catalogStatusNone">Без подтверждений</option>
         </select>
+        <select id="catalog-topic-filter" aria-label="Тематика" onchange="filterCatalog()">
+            <option value="all" data-i18n="topicAll">Все тематики</option>
+            <option value="news" data-i18n="topicNews">Новости и СМИ</option>
+            <option value="finance" data-i18n="topicFinance">Финансы и банки</option>
+            <option value="government" data-i18n="topicGovernment">Государственные сервисы</option>
+            <option value="education" data-i18n="topicEducation">Образование</option>
+            <option value="technology" data-i18n="topicTechnology">Технологии</option>
+            <option value="shopping" data-i18n="topicShopping">Покупки и маркетплейсы</option>
+            <option value="entertainment" data-i18n="topicEntertainment">Развлечения</option>
+            <option value="other" data-i18n="topicOther">Другое</option>
+        </select>
         <select id="catalog-sort-filter" aria-label="Сортировка" onchange="filterCatalog()">
             <option value="recommended" data-i18n="catalogSortRecommended">По умолчанию</option>
             <option value="newest" data-i18n="catalogSortNewest">Сначала новые</option>
@@ -280,6 +322,17 @@ input::placeholder,textarea::placeholder{color:#666}
             <option value="group" data-i18n="group">Группа</option>
             <option value="other" data-i18n="other">Другое</option>
         </select>
+        <select id="add-topic" aria-label="Тематика проекта">
+            <option value="" data-i18n="topicUnspecified">Тематика не указана</option>
+            <option value="news" data-i18n="topicNews">Новости и СМИ</option>
+            <option value="finance" data-i18n="topicFinance">Финансы и банки</option>
+            <option value="government" data-i18n="topicGovernment">Государственные сервисы</option>
+            <option value="education" data-i18n="topicEducation">Образование</option>
+            <option value="technology" data-i18n="topicTechnology">Технологии</option>
+            <option value="shopping" data-i18n="topicShopping">Покупки и маркетплейсы</option>
+            <option value="entertainment" data-i18n="topicEntertainment">Развлечения</option>
+            <option value="other" data-i18n="topicOther">Другое</option>
+        </select>
         <textarea id="add-desc" rows="3" data-i18n-placeholder="description" placeholder="Описание (необязательно)"></textarea>
         <input id="add-web" data-i18n-placeholder="website" placeholder="Официальный сайт (необязательно)">
         <button class="btn" onclick="submitProject(this)" data-i18n="submitModeration">Отправить на модерацию</button>
@@ -288,7 +341,29 @@ input::placeholder,textarea::placeholder{color:#666}
 <div id="screen-profile" class="screen">
     <h2 data-i18n="myProjects">Мои проекты</h2>
     <div id="my-projects-list" class="recent-grid"><div class="empty-state" data-i18n="noOwnProjects">У вас пока нет проектов</div></div>
+    <div class="card owner-analytics" id="owner-analytics">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <div><b data-i18n="ownerAnalyticsTitle">Статистика владельца</b><div style="font-size:11px;color:#777;margin-top:5px" data-i18n="ownerAnalyticsSubtitle">Просмотры и обращения по вашим проектам</div></div>
+            <button class="watch-action" type="button" onclick="loadOwnerAnalytics()" data-i18n="refresh">Обновить</button>
+        </div>
+        <div id="owner-analytics-content"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    </div>
     <a class="privacy-link" id="privacy-link" href="/privacy?lang=ru" onclick="event.preventDefault();openPrivacyPolicy()" data-i18n="privacyPolicy">Политика конфиденциальности</a>
+</div>
+<div id="screen-watchlist" class="screen">
+    <h2 data-i18n="watchlistTitle">Избранное и отслеживание</h2>
+    <p class="subtitle" data-i18n="watchlistSubtitle">Сохраняйте проекты и следите за изменениями их статусов.</p>
+    <div class="watch-toolbar">
+        <span id="watchlist-count" class="catalog-results-count"></span>
+        <button class="btn-admin" type="button" onclick="loadWatchlistScreen()" data-i18n="refresh">Обновить</button>
+    </div>
+    <div id="watchlist-list" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
+    <h3 class="section-heading" data-i18n="notificationsTitle">Уведомления об изменениях</h3>
+    <div class="watch-toolbar">
+        <span id="notification-count" class="catalog-results-count"></span>
+        <button class="btn-admin" type="button" onclick="markAllNotificationsRead()" data-i18n="markRead">Отметить прочитанными</button>
+    </div>
+    <div id="notifications-list" class="recent-grid"><div class="empty-state" data-i18n="loading">Загрузка...</div></div>
 </div>
 <div id="screen-admin" class="screen">
     <h2 data-i18n="adminPanel">Админ-панель</h2>
@@ -359,6 +434,7 @@ input::placeholder,textarea::placeholder{color:#666}
     <div class="nav-item" onclick="switchTab('catalog',this)"><svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/></svg><span data-i18n="catalogShort">Каталог</span></div>
     <div class="nav-item" onclick="switchTab('add',this)"><svg viewBox="0 0 24 24"><path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><span data-i18n="add">Добавить</span></div>
     <div class="nav-item" onclick="switchTab('profile',this)"><svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span data-i18n="profile">Профиль</span></div>
+    <div class="nav-item" onclick="switchTab('watchlist',this)"><svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1zm1 2v13.6l5-2.85 5 2.85V5H7z"/></svg><span data-i18n="savedShort">Сохранено</span></div>
 </div>
 <div class="toast-container" id="toast-container"></div>
 <script>
@@ -384,6 +460,8 @@ let lastCheckData=null;
 let catalogProjectsData=[];
 let adminUsersData=[];
 let adminProjectsData=[];
+let watchlistProjectIds=new Set();
+let unreadNotificationCount=0;
 
 const translations={
 ru:{
@@ -510,6 +588,48 @@ Object.assign(translations.en,{
 
 Object.assign(translations.ru,{privacyPolicy:'Политика конфиденциальности'});
 Object.assign(translations.en,{privacyPolicy:'Privacy Policy'});
+Object.assign(translations.ru,{
+    personalUpdatesTitle:'Ваш LINKCHECK',openSaved:'Открыть',watchlistTitle:'Избранное и отслеживание',
+    watchlistSubtitle:'Сохраняйте проекты и следите за изменениями их статусов.',savedShort:'Избранное',
+    notificationsTitle:'Уведомления об изменениях',refresh:'Обновить',markRead:'Отметить прочитанными',
+    noSavedProjects:'Вы пока не добавили проекты в избранное.',noNotifications:'Новых уведомлений пока нет.',
+    saveProject:'В избранное',removeSaved:'Убрать',savedAdded:'Проект добавлен в избранное',
+    savedRemoved:'Проект удалён из избранного',watchlistLoadError:'Не удалось загрузить избранное',
+    notificationsLoadError:'Не удалось загрузить уведомления',notificationsUnread:'Непрочитанных уведомлений',
+    notificationsAllRead:'Уведомления отмечены прочитанными',notificationReadError:'Не удалось обновить уведомления',
+    ownerAnalyticsTitle:'Статистика владельца',ownerAnalyticsSubtitle:'Просмотры и обращения по вашим проектам',
+    ownerViews:'Переходы всего',ownerViews7d:'Переходы за 7 дней',ownerReports:'Жалобы',ownerPendingReports:'Ожидают рассмотрения',
+    ownerOwnershipRequests:'Проверки владения',ownerOfficialRequests:'OFFICIAL RESOURCE',ownerProjects:'Ваши проекты',
+    ownerNoProjects:'У вас пока нет проектов для статистики.',ownerAnalyticsError:'Не удалось загрузить статистику',
+    ownerProjectViews:'просмотров',ownerViewsDaily:'Просмотры за 7 дней',projectViewOpen:'Переходы из каталога',
+    signInForSaved:'Откройте LINKCHECK через Telegram, чтобы использовать избранное.',
+    topicUnspecified:'Тематика не указана',topicAll:'Все тематики',topicNews:'Новости и СМИ',topicFinance:'Финансы и банки',
+    topicGovernment:'Государственные сервисы',topicEducation:'Образование',topicTechnology:'Технологии',
+    topicShopping:'Покупки и маркетплейсы',topicEntertainment:'Развлечения',topicOther:'Другое',projectHistory:'История изменений',
+    noProjectHistory:'История изменений пока пуста',historyLoadError:'Не удалось загрузить историю',
+    historyStatus:'Статусы',historyTitle:'Название',historyLink:'Ссылка',historyDescription:'Описание',historyWebsite:'Сайт',historyTopic:'Тематика',historyModeration:'Публикация',historyOwnership:'Владение'
+});
+Object.assign(translations.en,{
+    personalUpdatesTitle:'Your LINKCHECK',openSaved:'Open',watchlistTitle:'Saved and following',
+    watchlistSubtitle:'Save projects and follow changes to their statuses.',savedShort:'Saved',
+    notificationsTitle:'Change notifications',refresh:'Refresh',markRead:'Mark as read',
+    noSavedProjects:'You have not saved any projects yet.',noNotifications:'There are no notifications yet.',
+    saveProject:'Save',removeSaved:'Remove',savedAdded:'Project saved',savedRemoved:'Project removed from saved',
+    watchlistLoadError:'Could not load saved projects',notificationsLoadError:'Could not load notifications',
+    notificationsUnread:'Unread notifications',notificationsAllRead:'Notifications marked as read',
+    notificationReadError:'Could not update notifications',ownerAnalyticsTitle:'Owner analytics',
+    ownerAnalyticsSubtitle:'Views and reports for your projects',ownerViews:'Total outbound visits',ownerViews7d:'Outbound visits · 7 days',
+    ownerReports:'Reports',ownerPendingReports:'Pending review',ownerOwnershipRequests:'Ownership reviews',
+    ownerOfficialRequests:'OFFICIAL RESOURCE',ownerProjects:'Your projects',
+    ownerNoProjects:'You do not have projects to display analytics for.',ownerAnalyticsError:'Could not load analytics',
+    ownerProjectViews:'views',ownerViewsDaily:'Views over 7 days',projectViewOpen:'Catalog visits',
+    signInForSaved:'Open LINKCHECK through Telegram to use saved projects.',
+    topicUnspecified:'No topic specified',topicAll:'All topics',topicNews:'News and media',topicFinance:'Finance and banking',
+    topicGovernment:'Government services',topicEducation:'Education',topicTechnology:'Technology',
+    topicShopping:'Shopping and marketplaces',topicEntertainment:'Entertainment',topicOther:'Other',projectHistory:'Change history',
+    noProjectHistory:'No change history yet',historyLoadError:'Could not load change history',
+    historyStatus:'Statuses',historyTitle:'Title',historyLink:'Link',historyDescription:'Description',historyWebsite:'Website',historyTopic:'Topic',historyModeration:'Publication',historyOwnership:'Ownership'
+});
 
 function openPrivacyPolicy(){
     const modal=document.getElementById('privacy-modal');
@@ -625,6 +745,7 @@ function refreshCurrentScreen(){
     if(active.id==='screen-home')loadRecent();
     else if(active.id==='screen-catalog')loadCatalog();
     else if(active.id==='screen-profile')loadMyProjects();
+    else if(active.id==='screen-watchlist')loadWatchlistScreen();
     else if(active.id==='screen-admin'){
         const tab=document.querySelector('.admin-tab.active');
         if(!tab)return;
@@ -745,9 +866,14 @@ function renderProjectCard(project,showPublished=true){
     const sourceUrl=safeExternalUrl(project.source_url);
     const source=sourceUrl?`<a class="project-source" href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(t('sourceLabel'))} ↗</a>`:'';
     const published=showPublished?`<div class="catalog-published">${escapeHTML(t('publishedCatalog'))}</div>`:'';
-    const reportButton=showPublished?`<button class="btn-report" type="button" onclick="openReportModal(${Number(project.id)})">${escapeHTML(t('reportProject'))}</button>`:'';
+    const projectId=Number(project.id);
+    const topicLabel=project.topic?`<div class="catalog-topic-label">${escapeHTML(t('topic'+String(project.topic).charAt(0).toUpperCase()+String(project.topic).slice(1))||project.topic)}</div>`:'';
+    const isSaved=watchlistProjectIds.has(projectId);
+    const watchButton=showPublished?`<button class="watch-action ${isSaved?'saved':''}" type="button" onclick="toggleWatchProject(${projectId},this)">${escapeHTML(isSaved?t('removeSaved'):t('saveProject'))}</button>`:'';
+    const reportButton=showPublished?`<button class="btn-report" type="button" onclick="openReportModal(${projectId})">${escapeHTML(t('reportProject'))}</button>`:'';
+    const historyButton=`<button class="btn-admin" type="button" onclick="loadProjectChanges(${projectId},this)">${escapeHTML(t('projectHistory'))}</button>`;
     const freshness=project.last_checked_at?`<div class="catalog-freshness">${escapeHTML(t('catalogLastChecked'))}: ${escapeHTML(formatMoscowDateTime(project.last_checked_at))}</div>`:'';
-    return `<div class="card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br><a href="https://t.me/${encodeURIComponent(String(project.link||'').replace(/^@/,''))}" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;text-decoration:none">${escapeHTML(project.link)}</a><div class="project-badges">${renderProjectBadges(project)}</div>${description}${website}${source}${freshness}${published}${reportButton}</div>`;
+    return `<div class="card"><div class="project-title-row"><b>${escapeHTML(project.title)}</b>${renderLinkcheckBadgeButton(project)}</div><br><a href="https://t.me/${encodeURIComponent(String(project.link||'').replace(/^@/,''))}" onclick="trackProjectView(${projectId})" target="_blank" rel="noopener noreferrer" style="color:var(--silver);font-size:13px;text-decoration:none">${escapeHTML(project.link)}</a><div class="project-badges">${renderProjectBadges(project)}</div>${topicLabel}${description}${website}${source}${freshness}${published}<div class="admin-actions">${historyButton}${watchButton}${reportButton}</div><div class="project-history" id="project-history-${projectId}" style="display:none"></div></div>`;
 }
 
 function normalizeSearchText(value){return String(value??'').toLocaleLowerCase().replace(/ё/g,'е').trim()}
@@ -767,6 +893,7 @@ function filterCatalog(){
     const query=search.value.trim();
     const typeFilter=document.getElementById('catalog-type-filter')?.value||'all';
     const statusFilter=document.getElementById('catalog-status-filter')?.value||'all';
+    const topicFilter=document.getElementById('catalog-topic-filter')?.value||'all';
     const sortFilter=document.getElementById('catalog-sort-filter')?.value||'recommended';
     if(!catalogProjectsData.length){
         const count=document.getElementById('catalog-results-count');if(count)count.textContent='';
@@ -781,6 +908,7 @@ function filterCatalog(){
         const rawCategory=String(project.category||'other').toLowerCase();
         const normalizedCategory=['channel','bot','group'].includes(rawCategory)?rawCategory:'other';
         if(typeFilter!=='all'&&normalizedCategory!==typeFilter)return false;
+        if(topicFilter!=='all'&&String(project.topic||'').toLowerCase()!==topicFilter)return false;
         const hasTelegram=!!project.telegram_verified;
         const hasOfficial=!!project.is_official;
         const hasOwnership=String(project.ownership_status||'').toLowerCase()==='verified';
@@ -1018,14 +1146,16 @@ function switchTab(id,el){
     document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
     document.getElementById('screen-'+id).classList.add('active');el.classList.add('active');
     clearInterval(pollAdminInterval);clearInterval(pollProfileInterval);clearInterval(pollAddInterval);
-    if(id==='home'){loadStats();loadRecent()}
+    if(id==='home'){loadStats();loadRecent();loadHomePersonalSummary()}
     if(id==='catalog')loadCatalog();
+    if(id==='watchlist')loadWatchlistScreen();
     if(id==='profile'){
         // Не перерисовываем список проектов по таймеру: это закрывает подсказки,
         // блок подтверждения владения и может прервать выбор/загрузку скриншота.
         clearInterval(pollProfileInterval);
         pollProfileInterval=null;
         loadMyProjects(true);
+        loadOwnerAnalytics();
     }
     if(id==='admin'){
         loadAdminRequests();
@@ -1096,12 +1226,13 @@ async function submitProject(btn){
     const title=document.getElementById('add-title').value.trim();
     const link=document.getElementById('add-link').value.trim();
     const category=document.getElementById('add-category').value;
+    const topic=document.getElementById('add-topic')?.value||'';
     const description=document.getElementById('add-desc').value.trim();
     const website=document.getElementById('add-web').value.trim();
     if(!title||!link){showToast(t('fillFields'),'error');return}
     btn.disabled=true;btn.innerText=t('telegramChecking');
     try{
-        const r=await fetch('/api/add',{method:'POST',headers:getHeaders(),body:JSON.stringify({title,link,category,description,website})});
+        const r=await fetch('/api/add',{method:'POST',headers:getHeaders(),body:JSON.stringify({title,link,category,topic,description,website})});
         let d={};try{d=await r.json()}catch(e){}
         if(!r.ok){
             const errorMessage=d.error||d.message||(r.status===401?'Telegram-авторизация устарела. Переоткройте приложение.':r.status===403?'У вас нет прав на добавление проектов.':r.status===503?'Проверка Telegram временно недоступна. Попробуйте позже.':t('requestFailed'));
@@ -1112,7 +1243,7 @@ async function submitProject(btn){
         else if(d.telegram_status==='exists')successMessage=t('projectSentFound');
         else if(d.telegram_status==='unavailable')successMessage=t('projectSentUnavailable');
         showToast(successMessage);
-        ['add-title','add-link','add-desc','add-web'].forEach(id=>{document.getElementById(id).value=''});
+        ['add-title','add-link','add-desc','add-web'].forEach(id=>{document.getElementById(id).value=''});if(document.getElementById('add-topic'))document.getElementById('add-topic').value='';
         loadStats();loadMyProjects();
     }catch(e){console.error('Submit project error:',e);showToast(t('networkError'),'error')}
     finally{btn.disabled=false;btn.innerText=t('submitModeration')}
@@ -1183,6 +1314,8 @@ function renderMyProjectCard(project){
     const website=websiteUrl?`<div style="margin-top:8px;font-size:12px"><a href="${escapeHTML(websiteUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver)">${escapeHTML(project.website)}</a></div>`:'';
     const category=String(project.category||'other');
     const categoryOptions=[['channel','channel'],['bot','bot'],['group','group'],['other','other']].map(([value,key])=>`<option value="${value}" ${category===value?'selected':''}>${escapeHTML(t(key))}</option>`).join('');
+    const topic=String(project.topic||'');
+    const topicOptions=[['','topicUnspecified'],['news','topicNews'],['finance','topicFinance'],['government','topicGovernment'],['education','topicEducation'],['technology','topicTechnology'],['shopping','topicShopping'],['entertainment','topicEntertainment'],['other','topicOther']].map(([value,key])=>`<option value="${value}" ${topic===value?'selected':''}>${escapeHTML(t(key))}</option>`).join('');
     const sourceUrl=safeExternalUrl(project.source_url);
     const source=sourceUrl?`<div style="margin-top:6px;font-size:12px"><a href="${escapeHTML(sourceUrl)}" target="_blank" rel="noopener noreferrer" style="color:var(--silver)">${escapeHTML(t('sourceLabel'))} ↗</a></div>`:'';
     const reviewStatus=String(project.ownership_review_status||'');
@@ -1210,6 +1343,7 @@ function renderMyProjectCard(project){
             <input id="edit-title-${id}" maxlength="80" value="${escapeHTML(project.title)}" placeholder="${escapeHTML(t('editProjectTitle'))}">
             <input id="edit-link-${id}" maxlength="300" value="${escapeHTML(project.link)}" placeholder="${escapeHTML(t('editProjectLink'))}">
             <select id="edit-category-${id}">${categoryOptions}</select>
+            <select id="edit-topic-${id}">${topicOptions}</select>
             <textarea id="edit-description-${id}" rows="3" maxlength="1000" placeholder="${escapeHTML(t('editProjectDescription'))}">${escapeHTML(project.description||'')}</textarea>
             <input id="edit-website-${id}" maxlength="300" value="${escapeHTML(project.website||'')}" placeholder="${escapeHTML(t('editProjectWebsite'))}">
             <div class="admin-actions">
@@ -1229,13 +1363,14 @@ async function saveProjectEdits(projectId,button){
     const title=field('title')?.value.trim()||'';
     const link=field('link')?.value.trim()||'';
     const category=field('category')?.value||'other';
+    const topic=field('topic')?.value||'';
     const description=field('description')?.value.trim()||'';
     const website=field('website')?.value.trim()||'';
     if(!title||!link){showToast(t('fillFields'),'error');return}
     const oldText=button.textContent;
     button.disabled=true;button.textContent=t('telegramChecking');
     try{
-        const response=await fetch('/api/edit',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,title,link,category,description,website}),signal:AbortSignal.timeout(20000)});
+        const response=await fetch('/api/edit',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,title,link,category,topic,description,website}),signal:AbortSignal.timeout(20000)});
         let data={};try{data=await response.json()}catch(error){}
         if(!response.ok){
             const fallback=response.status===401?'authExpired':response.status===403?'forbidden':'requestFailed';
@@ -1821,8 +1956,173 @@ async function toggleTrust(id,action){
     }catch(e){showToast(t('serverError'),'error')}
 }
 
+async function toggleWatchProject(projectId,button){
+    const id=Number(projectId);
+    if(!Number.isInteger(id)||id<=0)return;
+    const isSaved=watchlistProjectIds.has(id);
+    const action=isSaved?'remove':'add';
+    if(button){button.disabled=true}
+    try{
+        const response=await fetch('/api/watchlist',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id,action}),signal:AbortSignal.timeout(12000)});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||t('requestFailed'));
+        if(action==='add')watchlistProjectIds.add(id);else watchlistProjectIds.delete(id);
+        showToast(action==='add'?t('savedAdded'):t('savedRemoved'));
+        if(document.getElementById('screen-catalog')?.classList.contains('active'))filterCatalog();
+        if(document.getElementById('screen-watchlist')?.classList.contains('active'))loadWatchlistScreen();
+        loadHomePersonalSummary();
+    }catch(error){console.error('Watchlist action error:',error);showToast(localizeBackendMessage(error.message,'requestFailed'),'error')}
+    finally{if(button)button.disabled=false}
+}
+
+async function trackProjectView(projectId){
+    const id=Number(projectId);
+    if(!Number.isInteger(id)||id<=0)return;
+    try{
+        await fetch('/api/project/view',{method:'POST',headers:getHeaders(),body:JSON.stringify({project_id:id}),keepalive:true});
+    }catch(error){console.debug('Project view was not recorded:',error)}
+}
+
+function openWatchlistFromHome(){
+    const nav=[...document.querySelectorAll('.nav-item')].find(item=>item.getAttribute('onclick')?.includes("switchTab('watchlist'"));
+    if(nav)switchTab('watchlist',nav);
+}
+
+async function loadHomePersonalSummary(){
+    const box=document.getElementById('home-personal-summary');
+    const text=document.getElementById('home-personal-summary-text');
+    if(!box||!text)return;
+    try{
+        const [savedResponse,notificationResponse]=await Promise.all([
+            fetch('/api/watchlist',{headers:getHeaders(),cache:'no-store'}),
+            fetch('/api/notifications?limit=1',{headers:getHeaders(),cache:'no-store'})
+        ]);
+        if(!savedResponse.ok||!notificationResponse.ok){box.style.display='none';return}
+        const saved=await savedResponse.json();
+        const notifications=await notificationResponse.json();
+        const items=Array.isArray(saved.items)?saved.items:[];
+        watchlistProjectIds=new Set(items.map(item=>Number(item.id)).filter(Number.isFinite));
+        unreadNotificationCount=Number(notifications.unread_count||0);
+        box.style.display='block';
+        text.textContent=`${t('savedShort')}: ${items.length} · ${t('notificationsUnread')}: ${unreadNotificationCount}`;
+    }catch(error){box.style.display='none'}
+}
+
+async function loadWatchlistScreen(){
+    const list=document.getElementById('watchlist-list');
+    const notificationsList=document.getElementById('notifications-list');
+    if(!list||!notificationsList)return;
+    list.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
+    notificationsList.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
+    try{
+        const [savedResponse,notificationResponse]=await Promise.all([
+            fetch('/api/watchlist',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)}),
+            fetch('/api/notifications?limit=50',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)})
+        ]);
+        const savedData=await savedResponse.json();
+        const notificationData=await notificationResponse.json();
+        if(!savedResponse.ok)throw new Error(savedData.error||t('watchlistLoadError'));
+        if(!notificationResponse.ok)throw new Error(notificationData.error||t('notificationsLoadError'));
+        const savedItems=Array.isArray(savedData.items)?savedData.items:[];
+        watchlistProjectIds=new Set(savedItems.map(item=>Number(item.id)).filter(Number.isFinite));
+        const count=document.getElementById('watchlist-count');
+        if(count)count.textContent=`${savedItems.length} ${t('savedShort').toLowerCase()}`;
+        list.innerHTML=savedItems.length?savedItems.map(item=>renderProjectCard(item,false)+`<div class="card" style="margin-top:-8px"><button class="watch-action" type="button" onclick="toggleWatchProject(${Number(item.id)},this)">${escapeHTML(t('removeSaved'))}</button></div>`).join(''):`<div class="empty-state">${escapeHTML(t('noSavedProjects'))}</div>`;
+        const notifications=Array.isArray(notificationData.notifications)?notificationData.notifications:[];
+        unreadNotificationCount=Number(notificationData.unread_count||0);
+        const notificationCount=document.getElementById('notification-count');
+        if(notificationCount)notificationCount.textContent=`${t('notificationsUnread')}: ${unreadNotificationCount}`;
+        notificationsList.innerHTML=notifications.length?notifications.map(item=>{
+            const date=item.created_at?formatMoscowDateTime(item.created_at):'';
+            const project=item.project_title||item.project_link||'';
+            return `<div class="card notification-card ${item.read_at?'':'unread'}"><b>${escapeHTML(item.title||t('notificationsTitle'))}</b><div style="font-size:13px;color:#bbb">${escapeHTML(item.message||'')}</div>${project?`<div style="font-size:12px;color:#777">${escapeHTML(project)}</div>`:''}<div class="notification-meta">${escapeHTML(date)}</div>${item.read_at?'':`<button class="watch-action" type="button" onclick="markNotificationRead(${Number(item.id)},this)">${escapeHTML(t('markRead'))}</button>`}</div>`;
+        }).join(''):`<div class="empty-state">${escapeHTML(t('noNotifications'))}</div>`;
+        loadHomePersonalSummary();
+    }catch(error){
+        console.error('Load watchlist screen error:',error);
+        list.innerHTML=`<div class="empty-state">${escapeHTML(error.message||t('watchlistLoadError'))}</div>`;
+        notificationsList.innerHTML=`<div class="empty-state">${escapeHTML(t('notificationsLoadError'))}</div>`;
+    }
+}
+
+async function markNotificationRead(notificationId,button){
+    const id=Number(notificationId);
+    if(!Number.isInteger(id)||id<=0)return;
+    if(button)button.disabled=true;
+    try{
+        const response=await fetch('/api/notifications/read',{method:'POST',headers:getHeaders(),body:JSON.stringify({ids:[id]})});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||t('notificationReadError'));
+        await loadWatchlistScreen();
+    }catch(error){showToast(error.message||t('notificationReadError'),'error');if(button)button.disabled=false}
+}
+
+async function markAllNotificationsRead(){
+    try{
+        const response=await fetch('/api/notifications/read',{method:'POST',headers:getHeaders(),body:JSON.stringify({all:true})});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||t('notificationReadError'));
+        showToast(t('notificationsAllRead'));
+        await loadWatchlistScreen();
+    }catch(error){showToast(error.message||t('notificationReadError'),'error')}
+}
+
+async function loadProjectChanges(projectId,button){
+    const id=Number(projectId);
+    const card=button?.closest('.card');
+    const target=card?.querySelector(`#project-history-${id}`);
+    if(!target||!Number.isInteger(id)||id<=0)return;
+    if(target.style.display==='block'){target.style.display='none';return}
+    target.style.display='block';
+    target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
+    try{
+        const response=await fetch(`/api/project/changes?project_id=${id}&limit=20`,{cache:'no-store',signal:AbortSignal.timeout(12000)});
+        let data=[];try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||t('historyLoadError'));
+        if(!Array.isArray(data)||!data.length){target.innerHTML=`<div class="notification-meta">${escapeHTML(t('noProjectHistory'))}</div>`;return}
+        const labels={title:t('historyTitle'),link:t('historyLink'),description:t('historyDescription'),website:t('historyWebsite'),topic:t('historyTopic'),moderation_status:t('historyModeration'),ownership_status:t('historyOwnership'),is_official:'OFFICIAL RESOURCE',telegram_verified:'Telegram Verified',linkcheck_badge_manual:'LINKCHECK'};
+        target.innerHTML=data.map(item=>{
+            let changed=[];try{changed=JSON.parse(item.changed_fields||'[]')}catch(error){}
+            const fields=Array.isArray(changed)?changed.map(key=>labels[key]||key).join(', '):'';
+            return `<div class="notification-card" style="padding:9px 0;border-bottom:1px solid #292929"><div style="font-size:12px;color:#ddd">${escapeHTML(fields||t('projectHistory'))}</div><div class="notification-meta">${escapeHTML(item.created_at?formatMoscowDateTime(item.created_at):'')}</div></div>`;
+        }).join('');
+    }catch(error){target.innerHTML=`<div class="notification-meta">${escapeHTML(error.message||t('historyLoadError'))}</div>`}
+}
+
+async function loadOwnerAnalytics(){
+    const target=document.getElementById('owner-analytics-content');
+    if(!target)return;
+    target.innerHTML=`<div class="empty-state">${escapeHTML(t('loading'))}</div>`;
+    try{
+        const response=await fetch('/api/owner/analytics',{headers:getHeaders(),cache:'no-store',signal:AbortSignal.timeout(15000)});
+        let data={};try{data=await response.json()}catch(error){}
+        if(!response.ok)throw new Error(data.error||t('ownerAnalyticsError'));
+        if(!data.projects_count){target.innerHTML=`<div class="empty-state">${escapeHTML(t('ownerNoProjects'))}</div>`;return}
+        const metrics=[
+            [data.total_views,t('ownerViews')],[data.views_7d,t('ownerViews7d')],
+            [data.reports,t('ownerReports')],[data.pending_reports,t('ownerPendingReports')],
+            [data.ownership_requests,t('ownerOwnershipRequests')],[data.official_requests,t('ownerOfficialRequests')]
+        ];
+        const daily=Array.isArray(data.daily)?data.daily:[];
+        const max=Math.max(1,...daily.map(day=>Number(day.views||0)));
+        const bars=daily.map(day=>{
+            const value=Number(day.views||0);
+            const height=Math.max(3,Math.round(value/max*58));
+            const label=String(day.day||'').slice(5);
+            return `<div class="owner-day" title="${escapeHTML(day.day||'')}: ${value}"><span style="font-size:9px;color:#aaa">${value}</span><div class="owner-day-bar" style="height:${height}px"></div><span class="owner-day-label">${escapeHTML(label)}</span></div>`;
+        }).join('');
+        const projects=(Array.isArray(data.projects)?data.projects:[]).map(project=>
+            `<div class="owner-project-row"><div><b>${escapeHTML(project.title||project.link||'')}</b><div style="color:#777;margin-top:4px">${escapeHTML(project.link||'')}</div></div><span>${Number(project.total_views||0)} ${escapeHTML(t('ownerProjectViews'))}<br>${Number(project.views_7d||0)} / 7d</span></div>`
+        ).join('');
+        target.innerHTML=`<div class="owner-metrics">${metrics.map(([value,label])=>`<div class="owner-metric"><strong>${Number(value||0)}</strong><span>${escapeHTML(label)}</span></div>`).join('')}</div><div style="font-size:12px;color:#aaa;margin-top:17px">${escapeHTML(t('ownerViewsDaily'))}</div><div class="owner-daily">${bars}</div><div style="font-size:12px;color:#aaa;margin:16px 0 4px">${escapeHTML(t('ownerProjects'))} · ${Number(data.projects_count)}</div>${projects}`;
+    }catch(error){
+        console.error('Owner analytics error:',error);
+        target.innerHTML=`<div class="empty-state">${escapeHTML(error.message||t('ownerAnalyticsError'))}</div>`;
+    }
+}
+
 setLanguage(currentLanguage);
-initUser().then(()=>{loadStats();loadRecent()});
+initUser().then(()=>{loadStats();loadRecent();loadHomePersonalSummary()});
 refreshFounderProfile();
 founderRefreshInterval=setInterval(refreshFounderProfile,60000);
 </script>

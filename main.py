@@ -57,6 +57,14 @@ except ImportError:
 
 load_dotenv()
 
+# Persistent data directory:
+# - on Bothost, /app/data survives container rebuilds and archive redeploys;
+# - locally, the project directory is used to preserve the existing layout.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_DATA_DIR = "/app/data" if os.path.isdir("/app/data") else APP_DIR
+DATA_DIR = os.path.abspath(os.getenv("DATA_DIR", DEFAULT_DATA_DIR))
+os.makedirs(DATA_DIR, exist_ok=True)
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 MINIAPP_URL = os.getenv("MINIAPP_URL", "").strip()
 
@@ -66,13 +74,19 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-DB_PATH = os.getenv("DB_PATH", "linkcheck.db")
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "linkcheck.db"))
 PORT = int(os.getenv("PORT", "8080"))
 INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "86400"))
 
-TG_API_ID = int(os.getenv("TG_API_ID", "0") or "0")
-TG_API_HASH = os.getenv("TG_API_HASH", "").strip()
-TG_SESSION = os.getenv("TG_SESSION", "linkcheck_telegram").strip()
+# Bothost's documentation uses TELEGRAM_API_ID / TELEGRAM_API_HASH;
+# TG_API_ID / TG_API_HASH remain supported for the existing local .env.
+TG_API_ID = int(os.getenv("TG_API_ID", os.getenv("TELEGRAM_API_ID", "0")) or "0")
+TG_API_HASH = os.getenv("TG_API_HASH", os.getenv("TELEGRAM_API_HASH", "")).strip()
+TG_SESSION = os.getenv("TG_SESSION", os.path.join(DATA_DIR, "linkcheck_telegram")).strip()
+
+# Ensure an explicitly configured database path also has an existing parent.
+_db_parent = os.path.dirname(os.path.abspath(DB_PATH))
+os.makedirs(_db_parent, exist_ok=True)
 
 FOUNDER_ID = 6182269112
 FOUNDER_FALLBACK_USERNAME = "nifort"
@@ -157,24 +171,21 @@ founder_gift_lock = asyncio.Lock()
 
 
 def founder_profile_cache_path():
-    """Постоянный кэш профиля создателя рядом с main.py."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, "founder_profile_cache.json")
+    """Путь к постоянному кэшу профиля создателя."""
+    return os.path.join(DATA_DIR, "founder_profile_cache.json")
 
 
 def founder_gift_directory():
-    """Каталог сохранённых Lottie-анимаций коллекционного подарка."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_dir, "founder_gifts")
+    """Каталог постоянного хранения Lottie-анимаций коллекционного подарка."""
+    return os.path.join(DATA_DIR, "founder_gifts")
 
 
 def load_founder_identity_from_telethon_session():
-    """Читает сохранённые username/name основателя из локальной Telethon session (read-only)."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
+    """Читает сохранённые username/name основателя из Telethon session (read-only)."""
     session_name = TG_SESSION
     if not session_name.endswith(".session"):
         session_name += ".session"
-    session_path = session_name if os.path.isabs(session_name) else os.path.join(base_dir, session_name)
+    session_path = session_name if os.path.isabs(session_name) else os.path.join(APP_DIR, session_name)
     if not os.path.isfile(session_path):
         return None
 
@@ -1047,6 +1058,80 @@ def init_db():
         )
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_link_unique ON projects(lower(link))"
+        )
+        # LINKCHECK Plus: сохранённые проекты, уведомления, журнал изменений и аналитика.
+        # Все таблицы добавляются без изменения существующих пользовательских записей.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_watchlist (
+                user_tg_id INTEGER NOT NULL,
+                project_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_tg_id, project_id),
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_watchlist_project "
+            "ON project_watchlist(project_id, user_tg_id)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_watch_snapshots (
+                project_id INTEGER PRIMARY KEY,
+                snapshot_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_change_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                changed_fields TEXT NOT NULL,
+                before_json TEXT NOT NULL,
+                after_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_change_history_project "
+            "ON project_change_history(project_id, id DESC)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient_tg_id INTEGER NOT NULL,
+                project_id INTEGER,
+                event_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                read_at TEXT,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE SET NULL
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_notifications_user_read "
+            "ON notifications(recipient_tg_id, read_at, id DESC)"
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                viewer_tg_id INTEGER NOT NULL,
+                viewed_at TEXT NOT NULL,
+                view_day TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                UNIQUE(project_id, viewer_tg_id, view_day)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_views_project_date "
+            "ON project_views(project_id, viewed_at)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_project_views_viewer "
+            "ON project_views(viewer_tg_id, viewed_at DESC)"
         )
         seed_catalog(conn)
 
@@ -2267,7 +2352,10 @@ async def api_founder_gift(request):
 
 
 async def api_founder_avatar(request):
-    avatar_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "founder_nifort.jpg")
+    avatar_path = os.path.join(DATA_DIR, "founder_nifort.jpg")
+    if not os.path.isfile(avatar_path):
+        # Backward-compatible fallback for an existing local project layout.
+        avatar_path = os.path.join(APP_DIR, "founder_nifort.jpg")
     if os.path.isfile(avatar_path):
         return web.FileResponse(
             avatar_path,
@@ -2509,6 +2597,10 @@ async def api_add_project(request):
         title = data.get("title", "")
         description = data.get("description", "")
         category = data.get("category", "other")
+        topic = str(data.get("topic") or "").strip().lower()
+        allowed_topics = {"", "news", "finance", "government", "education", "technology", "shopping", "entertainment", "other"}
+        if topic not in allowed_topics:
+            return json_error("Некорректная тематика проекта")
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 80:
             return json_error("Название обязательно и должно быть не длиннее 80 символов")
         if not isinstance(description, str) or len(description) > 1000:
@@ -2552,10 +2644,10 @@ async def api_add_project(request):
                 (owner_tg_id, title, link, category, description, website,
                  ownership_status, moderation_status, created_at, is_official,
                  telegram_verified, source_url, is_seed, topic, community_type)
-                VALUES (?, ?, ?, ?, ?, ?, 'unverified', 'pending', ?, 0, ?, NULL, 0, NULL, NULL)
+                VALUES (?, ?, ?, ?, ?, ?, 'unverified', 'pending', ?, 0, ?, NULL, 0, ?, NULL)
             """, (
                 user["id"], title.strip(), link, category, description.strip(),
-                website, now_iso(), telegram_verified
+                website, now_iso(), telegram_verified, topic or None
             ))
         except sqlite3.IntegrityError:
             return json_error("Этот ресурс уже есть в базе")
@@ -2640,6 +2732,11 @@ async def api_edit_project(request):
         title = data.get("title", "")
         description = data.get("description", "")
         category = data.get("category", "other")
+        topic_supplied = "topic" in data
+        topic = str(data.get("topic") or "").strip().lower()
+        allowed_topics = {"", "news", "finance", "government", "education", "technology", "shopping", "entertainment", "other"}
+        if topic not in allowed_topics:
+            return json_error("Некорректная тематика проекта")
         if project_id <= 0:
             return json_error("Некорректный ID проекта")
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 80:
@@ -2658,12 +2755,14 @@ async def api_edit_project(request):
 
     with db_connect() as conn:
         project = conn.execute("""
-            SELECT id, owner_tg_id, title, link, category, description, website,
+            SELECT id, owner_tg_id, title, link, category, description, website, topic,
                    ownership_status, is_official, telegram_verified, source_url
             FROM projects WHERE id=? AND owner_tg_id=? LIMIT 1
         """, (project_id, user["id"])).fetchone()
         if not project:
             return json_error("Проект не найден или не принадлежит вам", 404)
+        if not topic_supplied:
+            topic = str(project["topic"] or "").strip().lower()
 
         duplicate = conn.execute(
             "SELECT id FROM projects WHERE lower(link)=lower(?) AND id<>? LIMIT 1",
@@ -2678,12 +2777,14 @@ async def api_edit_project(request):
     link_changed = link.lower() != old_link.lower()
     category_changed = category != old_category
     website_changed = website != old_website
+    topic_changed = (topic or None) != (project["topic"] or None)
     content_changed = any((
         title != str(project["title"] or ""),
         link_changed,
         category_changed,
         description != str(project["description"] or ""),
-        website_changed
+        website_changed,
+        topic_changed
     ))
 
     if not content_changed:
@@ -2741,12 +2842,12 @@ async def api_edit_project(request):
         try:
             conn.execute("""
                 UPDATE projects
-                SET title=?, link=?, category=?, description=?, website=?,
+                SET title=?, link=?, category=?, description=?, website=?, topic=?,
                     moderation_status='pending', ownership_status=?, is_official=?,
                     telegram_verified=?, source_url=?
                 WHERE id=? AND owner_tg_id=?
             """, (
-                title, link, category, description, website,
+                title, link, category, description, website, topic or None,
                 ownership_status, is_official, telegram_verified, source_url,
                 project_id, user["id"]
             ))
@@ -4159,15 +4260,406 @@ async def api_admin_action(request):
     return web.json_response({"status": "ok", "message": "Действие выполнено"})
 
 # ============================================================
+# LINKCHECK PLUS — WATCHLIST, ИСТОРИЯ, УВЕДОМЛЕНИЯ И АНАЛИТИКА
+# ============================================================
+
+WATCHED_PROJECT_FIELDS = (
+    "title", "link", "description", "website", "topic", "moderation_status",
+    "ownership_status", "is_official", "telegram_verified", "linkcheck_badge_manual"
+)
+
+
+def project_watch_state(row):
+    """Публичный срез карточки для обнаружения реальных изменений."""
+    keys = set(row.keys()) if hasattr(row, "keys") else set(row or {})
+    state = {}
+    for key in WATCHED_PROJECT_FIELDS:
+        if key not in keys:
+            continue
+        value = row[key]
+        if key in {"is_official", "telegram_verified", "linkcheck_badge_manual"}:
+            value = bool(value)
+        else:
+            value = str(value or "")
+        state[key] = value
+    return state
+
+
+def describe_project_changes(before, after):
+    labels = {
+        "title": "Название проекта",
+        "link": "Ссылка проекта",
+        "description": "Описание проекта",
+        "website": "Официальный сайт",
+        "topic": "Тематика каталога",
+        "moderation_status": "Статус публикации",
+        "ownership_status": "Статус подтверждения владения",
+        "is_official": "Статус OFFICIAL RESOURCE",
+        "telegram_verified": "Статус Telegram Verified",
+        "linkcheck_badge_manual": "Ручной бейдж LINKCHECK",
+    }
+    changed = [key for key in WATCHED_PROJECT_FIELDS if before.get(key) != after.get(key)]
+    if not changed:
+        return [], "Изменения карточки проекта", "В карточке проекта обновились сведения."
+    title = "Обновление проекта"
+    if "moderation_status" in changed:
+        title = "Изменился статус публикации"
+    elif "ownership_status" in changed:
+        title = "Изменился статус владения"
+    elif "is_official" in changed:
+        title = "Изменился статус OFFICIAL RESOURCE"
+    elif "telegram_verified" in changed:
+        title = "Изменился статус Telegram Verified"
+    elif "linkcheck_badge_manual" in changed:
+        title = "Изменился бейдж LINKCHECK"
+    message = ", ".join(labels.get(key, key) for key in changed)
+    return changed, title, message + ". Откройте карточку, чтобы посмотреть актуальные сведения."
+
+
+def scan_project_changes(conn):
+    """Сверяет отслеживаемые карточки и создаёт уведомления наблюдателям/владельцу."""
+    rows = conn.execute("""
+        SELECT p.* FROM projects p
+        WHERE p.owner_tg_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM project_watchlist w WHERE w.project_id=p.id)
+    """).fetchall()
+    for row in rows:
+        project_id = int(row["id"])
+        current = project_watch_state(row)
+        current_json = json.dumps(current, ensure_ascii=False, sort_keys=True)
+        snapshot = conn.execute(
+            "SELECT snapshot_json FROM project_watch_snapshots WHERE project_id=?",
+            (project_id,)
+        ).fetchone()
+        if not snapshot:
+            conn.execute(
+                "INSERT INTO project_watch_snapshots(project_id,snapshot_json,updated_at) VALUES(?,?,?)",
+                (project_id, current_json, now_iso())
+            )
+            continue
+        try:
+            previous = json.loads(snapshot["snapshot_json"] or "{}")
+            if not isinstance(previous, dict):
+                previous = {}
+        except (ValueError, TypeError):
+            previous = {}
+        changed, title, message = describe_project_changes(previous, current)
+        if not changed:
+            continue
+        created_at = now_iso()
+        before_json = json.dumps(previous, ensure_ascii=False, sort_keys=True)
+        conn.execute("""
+            INSERT INTO project_change_history
+            (project_id,changed_fields,before_json,after_json,created_at)
+            VALUES(?,?,?,?,?)
+        """, (
+            project_id, json.dumps(changed, ensure_ascii=False),
+            before_json, current_json, created_at
+        ))
+        recipients = {
+            int(item[0]) for item in conn.execute(
+                "SELECT user_tg_id FROM project_watchlist WHERE project_id=?",
+                (project_id,)
+            ).fetchall()
+        }
+        if row["owner_tg_id"] is not None:
+            recipients.add(int(row["owner_tg_id"]))
+        for recipient_id in recipients:
+            conn.execute("""
+                INSERT INTO notifications
+                (recipient_tg_id,project_id,event_type,title,message,created_at)
+                VALUES(?,?,?,?,?,?)
+            """, (
+                recipient_id, project_id, ",".join(changed),
+                title, message, created_at
+            ))
+            # Не храним бесконечную ленту: оставляем 500 последних уведомлений пользователя.
+            conn.execute("""
+                DELETE FROM notifications
+                WHERE recipient_tg_id=? AND id NOT IN (
+                    SELECT id FROM notifications
+                    WHERE recipient_tg_id=? ORDER BY id DESC LIMIT 500
+                )
+            """, (recipient_id, recipient_id))
+        conn.execute(
+            "UPDATE project_watch_snapshots SET snapshot_json=?,updated_at=? WHERE project_id=?",
+            (current_json, created_at, project_id)
+        )
+        # Ограничиваем рост служебных таблиц: оставляем 100 последних событий проекта.
+        conn.execute("""
+            DELETE FROM project_change_history
+            WHERE project_id=? AND id NOT IN (
+                SELECT id FROM project_change_history WHERE project_id=? ORDER BY id DESC LIMIT 100
+            )
+        """, (project_id, project_id))
+
+
+async def api_watchlist(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку. Откройте Mini App через Telegram.", 401)
+    user_id = int(user["id"])
+    if request.method == "POST":
+        try:
+            data = await read_json(request)
+            project_id = int(data.get("project_id", 0))
+            action = str(data.get("action") or "add").strip().lower()
+            if project_id <= 0 or action not in {"add", "remove"}:
+                return json_error("Некорректный запрос избранного")
+        except (ValueError, TypeError, web.HTTPBadRequest):
+            return json_error("Некорректный запрос избранного")
+        with db_connect() as conn:
+            project = conn.execute(
+                "SELECT id FROM projects WHERE id=? AND moderation_status='approved'",
+                (project_id,)
+            ).fetchone()
+            if not project:
+                return json_error("Опубликованный проект не найден", 404)
+            if action == "add":
+                conn.execute("""
+                    INSERT OR IGNORE INTO project_watchlist(user_tg_id,project_id,created_at)
+                    VALUES(?,?,?)
+                """, (user_id, project_id, now_iso()))
+                # Сохраняем baseline при добавлении, чтобы не присылать старые изменения.
+                row = conn.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+                state_json = json.dumps(project_watch_state(row), ensure_ascii=False, sort_keys=True)
+                conn.execute("""
+                    INSERT OR IGNORE INTO project_watch_snapshots(project_id,snapshot_json,updated_at)
+                    VALUES(?,?,?)
+                """, (project_id, state_json, now_iso()))
+            else:
+                conn.execute(
+                    "DELETE FROM project_watchlist WHERE user_tg_id=? AND project_id=?",
+                    (user_id, project_id)
+                )
+        return web.json_response({"status": "ok", "action": action, "project_id": project_id})
+
+    with db_connect() as conn:
+        scan_project_changes(conn)
+        rows = conn.execute("""
+            SELECT p.id,p.title,p.link,p.category,p.description,p.website,p.source_url,
+                   p.topic,p.community_type,p.is_seed,p.ownership_status,p.moderation_status,
+                   p.is_official,p.telegram_verified,p.linkcheck_badge_manual,
+                   p.created_at,w.created_at AS saved_at
+            FROM project_watchlist w JOIN projects p ON p.id=w.project_id
+            WHERE w.user_tg_id=? AND p.moderation_status='approved'
+            ORDER BY w.created_at DESC
+        """, (user_id,)).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item.update(linkcheck_badge_payload(row))
+        item["is_official"] = bool(item.get("is_official"))
+        item["telegram_verified"] = bool(item.get("telegram_verified"))
+        result.append(item)
+    return web.json_response({"items": result, "count": len(result)})
+
+
+async def api_notifications(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку. Откройте Mini App через Telegram.", 401)
+    try:
+        limit = max(1, min(int(request.query.get("limit", "50")), 100))
+    except (TypeError, ValueError):
+        limit = 50
+    with db_connect() as conn:
+        scan_project_changes(conn)
+        unread_count = conn.execute(
+            "SELECT COUNT(*) FROM notifications WHERE recipient_tg_id=? AND read_at IS NULL",
+            (user["id"],)
+        ).fetchone()[0]
+        rows = conn.execute("""
+            SELECT n.id,n.project_id,n.event_type,n.title,n.message,n.created_at,n.read_at,
+                   p.title AS project_title,p.link AS project_link
+            FROM notifications n LEFT JOIN projects p ON p.id=n.project_id
+            WHERE n.recipient_tg_id=? ORDER BY n.id DESC LIMIT ?
+        """, (user["id"], limit)).fetchall()
+    return web.json_response({
+        "notifications": [dict(row) for row in rows],
+        "unread_count": int(unread_count)
+    })
+
+
+async def api_notifications_read(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку. Откройте Mini App через Telegram.", 401)
+    try:
+        data = await read_json(request)
+        raw_ids = data.get("ids")
+        mark_all = bool(data.get("all", False))
+        ids = []
+        if raw_ids is not None:
+            if not isinstance(raw_ids, list) or len(raw_ids) > 100:
+                return json_error("Некорректный список уведомлений")
+            ids = [int(value) for value in raw_ids if str(value).isdigit()]
+    except (ValueError, TypeError, web.HTTPBadRequest):
+        return json_error("Некорректный запрос")
+    with db_connect() as conn:
+        if mark_all:
+            cursor = conn.execute(
+                "UPDATE notifications SET read_at=? WHERE recipient_tg_id=? AND read_at IS NULL",
+                (now_iso(), user["id"])
+            )
+        elif ids:
+            placeholders = ",".join("?" for _ in ids)
+            cursor = conn.execute(
+                f"UPDATE notifications SET read_at=? WHERE recipient_tg_id=? AND id IN ({placeholders}) AND read_at IS NULL",
+                [now_iso(), user["id"], *ids]
+            )
+        else:
+            return json_error("Не выбраны уведомления")
+    return web.json_response({"status": "ok", "updated": int(cursor.rowcount)})
+
+
+async def api_project_view(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку. Откройте Mini App через Telegram.", 401)
+    try:
+        data = await read_json(request)
+        project_id = int(data.get("project_id", 0))
+        if project_id <= 0:
+            return json_error("Некорректный ID проекта")
+    except (ValueError, TypeError, web.HTTPBadRequest):
+        return json_error("Некорректный запрос")
+    today = datetime.now(timezone.utc).date().isoformat()
+    with db_connect() as conn:
+        project = conn.execute(
+            "SELECT id,owner_tg_id FROM projects WHERE id=? AND moderation_status='approved'",
+            (project_id,)
+        ).fetchone()
+        if not project:
+            return json_error("Проект не найден", 404)
+        recorded = False
+        if int(project["owner_tg_id"] or 0) != int(user["id"]):
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO project_views(project_id,viewer_tg_id,viewed_at,view_day)
+                VALUES(?,?,?,?)
+            """, (project_id, user["id"], now_iso(), today))
+            recorded = cursor.rowcount > 0
+    return web.json_response({"status": "ok", "recorded": recorded})
+
+
+async def api_project_changes(request):
+    try:
+        project_id = int(request.query.get("project_id", "0"))
+        limit = max(1, min(int(request.query.get("limit", "20")), 50))
+    except (TypeError, ValueError):
+        return json_error("Некорректные параметры")
+    if project_id <= 0:
+        return json_error("Не указан проект")
+    with db_connect() as conn:
+        rows = conn.execute("""
+            SELECT h.changed_fields,h.created_at
+            FROM project_change_history h
+            JOIN projects p ON p.id=h.project_id
+            WHERE h.project_id=? AND p.moderation_status='approved'
+            ORDER BY h.id DESC LIMIT ?
+        """, (project_id, limit)).fetchall()
+    return web.json_response([dict(row) for row in rows])
+
+
+async def api_owner_analytics(request):
+    user = authenticated_user(request)
+    if not user:
+        return json_error("Telegram-авторизация не прошла проверку. Откройте Mini App через Telegram.", 401)
+    user_id = int(user["id"])
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
+    with db_connect() as conn:
+        projects = conn.execute("""
+            SELECT p.id,p.title,p.link,p.moderation_status,p.ownership_status,p.is_official,
+                   COALESCE(v.total_views,0) AS total_views,
+                   COALESCE(v.views_7d,0) AS views_7d,
+                   COALESCE(r.report_count,0) AS report_count
+            FROM projects p
+            LEFT JOIN (
+                SELECT project_id,COUNT(*) AS total_views,
+                       SUM(CASE WHEN view_day>=? THEN 1 ELSE 0 END) AS views_7d
+                FROM project_views GROUP BY project_id
+            ) v ON v.project_id=p.id
+            LEFT JOIN (
+                SELECT project_id,COUNT(*) AS report_count FROM reports GROUP BY project_id
+            ) r ON r.project_id=p.id
+            WHERE p.owner_tg_id=? ORDER BY p.created_at DESC,p.id DESC
+        """, (since, user_id)).fetchall()
+        if not projects:
+            # Keep response shape stable for users who have not added projects yet.
+            return web.json_response({
+                "projects_count": 0, "total_views": 0, "views_7d": 0,
+                "reports": 0, "pending_reports": 0, "ownership_requests": 0,
+                "official_requests": 0, "daily": [], "projects": []
+            })
+        project_ids = [int(row["id"]) for row in projects]
+        placeholders = ",".join("?" for _ in project_ids)
+        reports = conn.execute(
+            f"SELECT COUNT(*) FROM reports WHERE project_id IN ({placeholders})",
+            project_ids
+        ).fetchone()[0]
+        pending_reports = conn.execute(
+            f"SELECT COUNT(*) FROM reports WHERE status='pending' AND project_id IN ({placeholders})",
+            project_ids
+        ).fetchone()[0]
+        ownership_requests = conn.execute(
+            f"SELECT COUNT(*) FROM ownership_challenges WHERE status='pending' AND project_id IN ({placeholders})",
+            project_ids
+        ).fetchone()[0]
+        official_requests = conn.execute(
+            f"SELECT COUNT(*) FROM official_verification_requests WHERE status='pending' AND project_id IN ({placeholders})",
+            project_ids
+        ).fetchone()[0]
+        daily_rows = conn.execute(f"""
+            SELECT substr(viewed_at,1,10) AS day,COUNT(*) AS views
+            FROM project_views WHERE project_id IN ({placeholders})
+              AND substr(viewed_at,1,10)>=?
+            GROUP BY substr(viewed_at,1,10) ORDER BY day ASC
+        """, [*project_ids, since]).fetchall()
+    daily_map = {row["day"]: int(row["views"]) for row in daily_rows}
+    daily = []
+    for offset in range(7):
+        day = (datetime.now(timezone.utc).date() - timedelta(days=6-offset)).isoformat()
+        daily.append({"day": day, "views": daily_map.get(day, 0)})
+    project_data = [dict(row) for row in projects]
+    return web.json_response({
+        "projects_count": len(project_data),
+        "total_views": sum(int(row["total_views"] or 0) for row in project_data),
+        "views_7d": sum(int(row["views_7d"] or 0) for row in project_data),
+        "reports": int(reports), "pending_reports": int(pending_reports),
+        "ownership_requests": int(ownership_requests),
+        "official_requests": int(official_requests),
+        "daily": daily, "projects": project_data
+    })
+
+
+async def watchlist_monitor_loop():
+    """Периодически фиксирует изменения проектов для владельцев и подписчиков."""
+    try:
+        interval = int(os.getenv("WATCHLIST_SCAN_INTERVAL", "60"))
+    except (TypeError, ValueError):
+        interval = 60
+    interval = max(30, min(interval, 900))
+    while True:
+        try:
+            with db_connect() as conn:
+                scan_project_changes(conn)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("Ошибка фоновой проверки изменений LINKCHECK")
+        await asyncio.sleep(interval)
+
+
+# ============================================================
 # WEB SERVER
 # ============================================================
 
 async def handle_index(request):
-    return web.FileResponse("miniapp.html", headers={"Cache-Control": "no-store"})
+    return web.FileResponse(os.path.join(APP_DIR, "miniapp.html"), headers={"Cache-Control": "no-store"})
 
 
 async def handle_privacy(request):
-    return web.FileResponse("privacy.html", headers={"Cache-Control": "public, max-age=300"})
+    return web.FileResponse(os.path.join(APP_DIR, "privacy.html"), headers={"Cache-Control": "public, max-age=300"})
 
 
 # Sliding-window limits are a first defensive layer for this single-process
@@ -4184,6 +4676,9 @@ API_RATE_LIMITS = {
     ("POST", "/api/ownership/screenshot"): (5, 3600),
     ("POST", "/api/official/request"): (5, 86400),
     ("POST", "/api/report"): (10, 86400),
+    ("POST", "/api/watchlist"): (60, 60),
+    ("POST", "/api/notifications/read"): (30, 60),
+    ("POST", "/api/project/view"): (120, 60),
 }
 API_RATE_LIMIT_DEFAULT = (120, 60)
 API_RATE_LIMIT_HITS = {}
@@ -4323,6 +4818,13 @@ async def start_web_server():
     app.router.add_post("/api/request_access", api_request_access)
     app.router.add_post("/api/check", api_check)
     app.router.add_get("/api/check/history", api_check_history)
+    app.router.add_get("/api/watchlist", api_watchlist)
+    app.router.add_post("/api/watchlist", api_watchlist)
+    app.router.add_get("/api/notifications", api_notifications)
+    app.router.add_post("/api/notifications/read", api_notifications_read)
+    app.router.add_post("/api/project/view", api_project_view)
+    app.router.add_get("/api/project/changes", api_project_changes)
+    app.router.add_get("/api/owner/analytics", api_owner_analytics)
     app.router.add_post("/api/add", api_add_project)
     app.router.add_post("/api/edit", api_edit_project)
     app.router.add_post("/api/official/request", api_official_verification_request)
@@ -4402,11 +4904,17 @@ async def main():
     await start_telegram_checker()
     await seed_public_catalog()
     runner = await start_web_server()
+    watchlist_task = asyncio.create_task(watchlist_monitor_loop(), name="linkcheck-watchlist-monitor")
     logging.info("Автоматическая массовая MTProto-проверка стартовых проектов отключена.")
     try:
         logging.info("Запуск LINKCHECK...")
         await dp.start_polling(bot)
     finally:
+        watchlist_task.cancel()
+        try:
+            await watchlist_task
+        except asyncio.CancelledError:
+            pass
         await runner.cleanup()
         if tg_client is not None:
             await tg_client.disconnect()
