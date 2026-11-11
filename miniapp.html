@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>LINKCHECK</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('telegram-webapp-sdk-ready'))"></script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 <style>
 :root{--bg:#050505;--card:#121212;--border:#262626;--silver:#a0a0a0;--text:#fff}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -523,10 +523,30 @@ input::placeholder,textarea::placeholder{color:#666}
     </div>
 </div>
 <script>
-// Do not let an unavailable Telegram SDK crash the whole Mini App.
-const tg=window.Telegram?.WebApp||{initData:'',initDataUnsafe:{},colorScheme:'dark',themeParams:{},platform:'unknown',ready(){},expand(){}};
-try{tg.ready();}catch(error){console.warn('Telegram WebApp ready() failed:',error)}
-try{tg.expand();}catch(error){console.warn('Telegram WebApp expand() failed:',error)}
+// Telegram's SDK and optional animation library must never block the HTML parser.
+// The SDK may arrive after this script on slow or filtered networks, so read it lazily.
+if(typeof AbortSignal!=='undefined'&&typeof AbortSignal.timeout!=='function'&&typeof AbortController!=='undefined'){
+    AbortSignal.timeout=function(milliseconds){
+        const controller=new AbortController();
+        setTimeout(()=>controller.abort(),Math.max(0,Number(milliseconds)||0));
+        return controller.signal;
+    };
+}
+const tg={
+    get initData(){return window.Telegram?.WebApp?.initData||''},
+    get initDataUnsafe(){return window.Telegram?.WebApp?.initDataUnsafe||{}},
+    get colorScheme(){return window.Telegram?.WebApp?.colorScheme||'dark'},
+    get themeParams(){return window.Telegram?.WebApp?.themeParams||{}},
+    get platform(){return window.Telegram?.WebApp?.platform||'unknown'},
+    ready(){try{return window.Telegram?.WebApp?.ready?.()}catch(error){console.warn('Telegram WebApp ready() failed:',error)}},
+    expand(){try{return window.Telegram?.WebApp?.expand?.()}catch(error){console.warn('Telegram WebApp expand() failed:',error)}}
+};
+function syncTelegramWebApp(){
+    tg.ready();
+    tg.expand();
+}
+syncTelegramWebApp();
+window.addEventListener('telegram-webapp-sdk-ready',syncTelegramWebApp);
 
 let isAdmin=false;
 let isTrusted=false;
@@ -1232,9 +1252,30 @@ async function refreshFounderProfile(){
     return founderProfileRequest;
 }
 
+function waitForTelegramWebApp(timeoutMs=3000){
+    if(tg.initData)return Promise.resolve(true);
+    return new Promise(resolve=>{
+        let settled=false;
+        const finish=()=>{
+            if(settled)return;
+            settled=true;
+            clearTimeout(timer);
+            window.removeEventListener('telegram-webapp-sdk-ready',onReady);
+            resolve(!!tg.initData);
+        };
+        const onReady=()=>{syncTelegramWebApp();finish()};
+        const timer=setTimeout(finish,timeoutMs);
+        window.addEventListener('telegram-webapp-sdk-ready',onReady,{once:true});
+    });
+}
 async function initUser(){
     try{
-        const res=await fetch('/api/me',{headers:getHeaders()});
+        await waitForTelegramWebApp();
+        if(!tg.initData){
+            showToast(currentLanguage==='ru'?'Откройте LINKCHECK через кнопку в Telegram для входа в профиль':'Open LINKCHECK using the Telegram button to sign in','error');
+            return;
+        }
+        const res=await fetch('/api/me',{headers:getHeaders(),cache:'no-store'});
         if(!res.ok)throw Error('Auth failed');
         const d=await res.json();
         isAdmin=d.is_admin;isTrusted=d.is_trusted;hasRequested=d.has_requested_access;
@@ -1250,7 +1291,10 @@ async function initUser(){
             document.getElementById('bottom-nav').appendChild(n);
         }
         updateAdminLabel();
-    }catch(e){console.error('Auth error',e)}
+    }catch(e){
+        console.error('Auth error',e);
+        showToast(currentLanguage==='ru'?'Не удалось проверить вход. Проверьте соединение и откройте приложение повторно':'Could not verify sign-in. Check your connection and reopen the app','error');
+    }
 }
 
 async function requestAccess(){
