@@ -5879,11 +5879,13 @@ def business_sender_html(record):
     sender_name = str(business_record_value(record, "sender_label", "Неизвестный пользователь") or "Неизвестный пользователь")
     sender_id = business_record_value(record, "sender_user_id")
     username = str(business_record_value(record, "sender_username", "") or "").strip().lstrip("@")
-    if username and re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
-        href = "https://t.me/" + username
-    elif sender_id:
+    # Prefer the Telegram user-ID deep link. Public t.me URLs create
+    # an unwanted account preview card in the notification.
+    if sender_id:
         href = "tg://user?id=" + str(int(sender_id))
     else:
+        # Without a numeric Telegram ID, show the name without a link rather
+        # than generating a public profile preview.
         return html.escape(sender_name[:100])
     return f'<a href="{html.escape(href, quote=True)}">{html.escape(sender_name[:100])}</a>'
 
@@ -5934,11 +5936,19 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
                 f"<blockquote>{html.escape(deleted_text[:650])}</blockquote>"
             )
         try:
-            if media_type in {"sticker", "video_note"}:
-                # Telegram has no caption field for sendSticker/sendVideoNote.
-                # Sending the preserved original as a document keeps the
-                # attachment and the before/after text inside one Telegram message.
-                await bot.send_document(owner_chat_id, source, caption=caption)
+            if media_type == "sticker":
+                # Stickers cannot have captions: send a short attribution
+                # message followed by the actual Telegram sticker.
+                sticker_note = (
+                    f"<b>Стикер</b>\nПользователь: {sender_html}\n"
+                    f"<b>{html.escape(heading)}</b>"
+                )
+                await bot.send_message(owner_chat_id, sticker_note, disable_web_page_preview=True)
+                await bot.send_sticker(owner_chat_id, source)
+            elif media_type == "video_note":
+                # Video notes also have no caption field.
+                await bot.send_message(owner_chat_id, caption, disable_web_page_preview=True)
+                await bot.send_video_note(owner_chat_id, source)
             elif media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
                 await getattr(bot, f"send_{media_type}")(owner_chat_id, source, caption=caption)
             else:
