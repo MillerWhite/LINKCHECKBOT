@@ -5418,25 +5418,119 @@ async def api_admin_plus_settings(request):
     return web.json_response({"plans": plus_plans(), "payments_enabled": PLUS_PAYMENTS_ENABLED})
 
 async def api_admin_plus_update(request):
-    admin = admin_user(request)
-    if not admin:
+    if not admin_user(request):
         return json_error("Forbidden", 403)
     try:
         data = await read_json(request)
-    except web.HTTPException:
-        return json_error("Некорректный запрос")
-    code = str(data.get("plan", ""))
-    if code not in {"1m", "6m", "12m"}:
-        return json_error("Неизвестный тариф")
-    try:
+        code = str(data.get("plan", "")).strip().lower()
         days = int(data.get("days")); base = int(data.get("base_stars")); discount = int(data.get("discount_percent"))
-    except (TypeError, ValueError):
-        return json_error("Срок, цена и скидка должны быть числами")
+    except (web.HTTPException, TypeError, ValueError):
+        return json_error("Проверьте код тарифа, срок, цену и скидку")
+    if not re.fullmatch(r"[a-z0-9_-]{2,24}", code):
+        return json_error("Код тарифа: 2–24 символа a-z, 0-9, _ или -")
     if not 1 <= days <= 3650 or not 1 <= base <= 1000000 or not 0 <= discount <= 90:
         return json_error("Допустимые значения: срок 1–3650 дней, цена 1–1 000 000 Stars, скидка 0–90%")
     with db_connect() as conn:
-        conn.execute("UPDATE plus_plan_settings SET days=?,base_stars=?,discount_percent=?,updated_at=? WHERE plan_code=?", (days, base, discount, now_iso(), code))
+        changed = conn.execute(
+            "UPDATE plus_plan_settings SET days=?,base_stars=?,discount_percent=?,updated_at=? WHERE plan_code=?",
+            (days, base, discount, now_iso(), code)
+        ).rowcount
+    if not changed:
+        return json_error("Тариф не найден")
     return web.json_response({"ok": True, "plans": plus_plans()})
+
+
+async def api_admin_plus_create(request):
+    if not admin_user(request):
+        return json_error("Forbidden", 403)
+    try:
+        data = await read_json(request)
+        title = str(data.get("title", "")).strip()
+        code = str(data.get("plan", "")).strip().lower()
+        days = int(data.get("days")); base = int(data.get("base_stars")); discount = int(data.get("discount_percent", 0))
+    except (web.HTTPException, TypeError, ValueError):
+        return json_error("Заполните название, код, срок и цену")
+    if not title or len(title) > 48:
+        return json_error("Название тарифа должно содержать 1–48 символов")
+    if not re.fullmatch(r"[a-z0-9_-]{2,24}", code):
+        return json_error("Код тарифа: 2–24 символа a-z, 0-9, _ или -")
+    if not 1 <= days <= 3650 or not 1 <= base <= 1000000 or not 0 <= discount <= 90:
+        return json_error("Допустимые значения: срок 1–3650 дней, цена 1–1 000 000 Stars, скидка 0–90%")
+    with db_connect() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO plus_plan_settings(plan_code,title,days,base_stars,discount_percent,updated_at) VALUES(?,?,?,?,?,?)",
+                (code, title, days, base, discount, now_iso())
+            )
+        except sqlite3.IntegrityError:
+            return json_error("Тариф с таким кодом уже существует", 409)
+    return web.json_response({"ok": True, "plans": plus_plans()})
+
+
+async def api_admin_plus_delete(request):
+    if not admin_user(request):
+        return json_error("Forbidden", 403)
+    try:
+        data = await read_json(request)
+        code = str(data.get("plan", "")).strip().lower()
+    except web.HTTPException:
+        return json_error("Некорректный запрос")
+    if not re.fullmatch(r"[a-z0-9_-]{2,24}", code):
+        return json_error("Некорректный код тарифа")
+    with db_connect() as conn:
+        row = conn.execute("SELECT plan_code FROM plus_plan_settings WHERE plan_code=?", (code,)).fetchone()
+        if not row:
+            return json_error("Тариф не найден", 404)
+        conn.execute("DELETE FROM plus_plan_settings WHERE plan_code=?", (code,))
+    return web.json_response({"ok": True, "plans": plus_plans()})
+
+
+async def api_admin_plus_subscription(request):
+    if not admin_user(request):
+        return json_error("Forbidden", 403)
+    try:
+        data = await read_json(request)
+        username = str(data.get("username", "")).strip().lstrip("@").lower()
+        action = str(data.get("action", "")).strip().lower()
+        days = int(data.get("days", 30)) if action == "grant" else 0
+    except (web.HTTPException, TypeError, ValueError):
+        return json_error("Некорректные данные")
+    if not re.fullmatch(r"[a-z0-9_]{5,32}", username):
+        return json_error("Введите корректный Telegram username")
+    if action not in {"grant", "revoke"}:
+        return json_error("Неизвестное действие")
+    if action == "grant" and not 1 <= days <= 3650:
+        return json_error("Срок подписки должен быть от 1 до 3650 дней")
+    with db_connect() as conn:
+        user = conn.execute(
+            "SELECT tg_id, username FROM users WHERE lower(username)=? ORDER BY tg_id LIMIT 1",
+            (username,)
+        ).fetchone()
+        if not user:
+            return json_error("Пользователь не найден. Он должен хотя бы один раз запустить бота или открыть LINKCHECK.", 404)
+        user_id = int(user["tg_id"])
+        if action == "revoke":
+            conn.execute("DELETE FROM plus_subscriptions WHERE tg_id=?", (user_id,))
+            expires_at = None
+        else:
+            now = datetime.now(timezone.utc)
+            current = conn.execute("SELECT expires_at FROM plus_subscriptions WHERE tg_id=?", (user_id,)).fetchone()
+            current_expiry = parse_utc_datetime(current["expires_at"], now) if current else now
+            expiry = max(now, current_expiry) + timedelta(days=days)
+            conn.execute(
+                "INSERT INTO plus_subscriptions(tg_id,plan_code,started_at,expires_at,updated_at) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(tg_id) DO UPDATE SET plan_code='admin',expires_at=excluded.expires_at,updated_at=excluded.updated_at",
+                (user_id, "admin", now.isoformat(), expiry.isoformat(), now.isoformat())
+            )
+            expires_at = expiry.isoformat()
+    try:
+        if action == "grant":
+            await bot.send_message(user_id, f"<b>LINKCHECK PLUS активирован администратором</b>\nСрок: {days} дней\nДействует до: {expiry.strftime('%d.%m.%Y %H:%M UTC')}")
+        else:
+            await bot.send_message(user_id, "<b>LINKCHECK PLUS отключён администратором</b>")
+    except Exception:
+        logging.info("LINKCHECK PLUS admin notification could not be delivered user=%s action=%s", user_id, action)
+    return web.json_response({"ok": True, "username": username, "action": action, "expires_at": expires_at})
 
 
 async def handle_plus_pre_checkout(query: PreCheckoutQuery):
@@ -6708,6 +6802,9 @@ async def start_web_server():
     app.router.add_post("/api/plus/trial", api_plus_trial)
     app.router.add_get("/api/admin/plus/settings", api_admin_plus_settings)
     app.router.add_post("/api/admin/plus/update", api_admin_plus_update)
+    app.router.add_post("/api/admin/plus/create", api_admin_plus_create)
+    app.router.add_post("/api/admin/plus/delete", api_admin_plus_delete)
+    app.router.add_post("/api/admin/plus/subscription", api_admin_plus_subscription)
     app.router.add_post("/api/request_access", api_request_access)
     app.router.add_post("/api/check", api_check)
     app.router.add_get("/api/check/history", api_check_history)
