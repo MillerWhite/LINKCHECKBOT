@@ -1273,6 +1273,8 @@ def init_db():
             )
         """)
         ensure_column(conn, "plus_business_messages", "media_path", "TEXT")
+        ensure_column(conn, "plus_business_messages", "sender_user_id", "INTEGER")
+        ensure_column(conn, "plus_business_messages", "sender_username", "TEXT")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
             "ON plus_business_messages(owner_tg_id, updated_at DESC)"
@@ -5635,6 +5637,15 @@ def business_message_is_outgoing(message: Message, owner_tg_id: int) -> bool:
     return bool(sender and int(sender.id) == int(owner_tg_id))
 
 
+def business_sender_user_data(message: Message):
+    """Return a Telegram user identity suitable for a clickable notification link."""
+    sender = getattr(message, "from_user", None)
+    if sender:
+        username = str(getattr(sender, "username", None) or "").strip().lstrip("@")
+        return int(sender.id), username or None
+    return None, None
+
+
 async def handle_business_connection(connection):
     """Persist a BusinessConnection from aiogram or an unmodified Bot API JSON response."""
     if isinstance(connection, dict):
@@ -5752,21 +5763,23 @@ async def handle_business_message(message: Message):
     media_type, media_file_id = business_media(message)
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
+    sender_user_id, sender_username = business_sender_user_data(message)
     with db_connect() as conn:
         old = conn.execute(
             "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
             (connection_id, message.chat.id, message.message_id)
         ).fetchone()
         conn.execute(
-            "INSERT INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
+            "INSERT INTO plus_business_messages(connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,sender_user_id,sender_username,text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET "
             "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
+            "sender_user_id=excluded.sender_user_id,sender_username=excluded.sender_username,"
             "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
             "media_file_id=excluded.media_file_id,media_path=COALESCE(excluded.media_path,plus_business_messages.media_path),"
             "is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
-             content, message.caption or "", media_type, media_file_id,
+             sender_user_id, sender_username, content, message.caption or "", media_type, media_file_id,
              old["media_path"] if old else None, int(is_outgoing), now_iso())
         )
         conn.execute(
@@ -5804,37 +5817,108 @@ async def handle_business_message(message: Message):
         connection["owner_tg_id"], message.chat.id, message.message_id, is_outgoing,
         media_type or "none", len(content or "")
     )
-async def send_business_snapshot(owner_chat_id: int, record, heading: str) -> bool:
-    chat = html.escape(str(record["chat_title"] or record["chat_id"]))
-    sender = html.escape(str(record["sender_label"] or "Неизвестно"))
-    body = str(record["text_content"] or record["caption"] or "").strip()
-    safe_body = html.escape(body[:3000]) if body else "<i>Текст отсутствует</i>"
-    caption = f"<b>{heading}</b>\nЧат: {chat}\nОтправитель: {sender}\n\n{safe_body}"
-    media_type, file_id = record["media_type"], record["media_file_id"]
-    media_path = record["media_path"] if "media_path" in record.keys() else None
+def business_record_value(record, key, default=None):
+    if record is None:
+        return default
     try:
-        source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
-        if source and media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
-            method = getattr(bot, f"send_{media_type}")
-            await method(owner_chat_id, source, caption=caption[:1024])
-        elif source and media_type == "video_note":
-            await bot.send_message(owner_chat_id, caption)
-            await bot.send_video_note(owner_chat_id, source)
-        elif source and media_type == "sticker":
-            await bot.send_message(owner_chat_id, caption)
-            await bot.send_sticker(owner_chat_id, source)
-        else:
-            await bot.send_message(owner_chat_id, caption)
-        return True
-    except Exception:
-        logging.exception("Не удалось переслать сохранённое Business-сообщение")
+        value = record[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
+def business_snapshot_text(record):
+    text_value = str(
+        business_record_value(record, "text_content", "")
+        or business_record_value(record, "caption", "")
+        or ""
+    ).strip()
+    if text_value:
+        return text_value
+    media_labels = {
+        "photo": "[Фото]", "video": "[Видео]", "video_note": "[Видеосообщение]",
+        "animation": "[GIF]", "voice": "[Голосовое сообщение]", "audio": "[Аудио]",
+        "sticker": "[Стикер]", "document": "[Файл]"
+    }
+    return media_labels.get(business_record_value(record, "media_type"), "[Сообщение без текста]")
+
+
+def business_sender_html(record):
+    sender_name = str(business_record_value(record, "sender_label", "Неизвестный пользователь") or "Неизвестный пользователь")
+    sender_id = business_record_value(record, "sender_user_id")
+    username = str(business_record_value(record, "sender_username", "") or "").strip().lstrip("@")
+    if username and re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+        href = "https://t.me/" + username
+    elif sender_id:
+        href = "tg://user?id=" + str(int(sender_id))
+    else:
+        return html.escape(sender_name[:100])
+    return f'<a href="{html.escape(href, quote=True)}">{html.escape(sender_name[:100])}</a>'
+
+
+async def send_business_event_notification(owner_chat_id: int, before_record, after_record=None,
+                                           heading: str = "Сообщение удалено") -> bool:
+    """Send one compact notification per edit/delete, with quoted before/after text."""
+    source_record = after_record if after_record is not None else before_record
+    sender_html = business_sender_html(source_record or before_record)
+
+    if after_record is not None:
+        before_text = (
+            business_snapshot_text(before_record) if before_record is not None
+            else "Исходная версия не была сохранена"
+        )
+        after_text = business_snapshot_text(after_record)
+        body = (
+            f"<b>{html.escape(heading)}</b>\n"
+            f"Пользователь: {sender_html}\n\n"
+            f"<b>До:</b>\n<blockquote>{html.escape(before_text[:1450])}</blockquote>\n"
+            f"<b>После:</b>\n<blockquote>{html.escape(after_text[:1450])}</blockquote>"
+        )
+    else:
+        deleted_text = business_snapshot_text(before_record)
+        body = (
+            f"<b>{html.escape(heading)}</b>\n"
+            f"Пользователь: {sender_html}\n\n"
+            f"<blockquote>{html.escape(deleted_text[:3000])}</blockquote>"
+        )
+
+    media_type = business_record_value(source_record, "media_type")
+    media_path = business_record_value(source_record, "media_path")
+    file_id = business_record_value(source_record, "media_file_id")
+    source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
+
+    # Telegram captions are limited to 1,024 characters. Keep both versions
+    # readable in one media message; text-only notifications allow up to 4,096.
+    if source and media_type:
+        caption = body[:1000]
+        if len(body) > 1000:
+            caption = body[:997] + "..."
         try:
-            await bot.send_message(owner_chat_id, caption + "\n\n<i>Медиафайл восстановить не удалось.</i>")
+            if media_type in {"sticker", "video_note"}:
+                # Telegram has no caption field for sendSticker/sendVideoNote.
+                # Sending the preserved original as a document keeps the
+                # attachment and the before/after text inside one Telegram message.
+                await bot.send_document(owner_chat_id, source, caption=caption)
+            elif media_type in {"photo", "video", "document", "animation", "audio", "voice"}:
+                await getattr(bot, f"send_{media_type}")(owner_chat_id, source, caption=caption)
+            else:
+                await bot.send_message(owner_chat_id, body[:4000])
             return True
         except Exception:
-            logging.exception("LINKCHECK PLUS: не удалось отправить даже текстовый снимок Business-сообщения")
-            return False
+            logging.exception("LINKCHECK PLUS: media notification failed; falling back to one text notification")
+            try:
+                await bot.send_message(owner_chat_id, body[:4000])
+                return True
+            except Exception:
+                logging.exception("LINKCHECK PLUS: text notification fallback failed")
+                return False
 
+    try:
+        await bot.send_message(owner_chat_id, body[:4000])
+        return True
+    except Exception:
+        logging.exception("LINKCHECK PLUS: Business event notification failed")
+        return False
 
 
 async def cache_mtproto_message_snapshot(event):
@@ -5902,17 +5986,24 @@ async def cache_mtproto_message_snapshot(event):
         previous = MT_PROTO_MESSAGE_CACHE.get(cache_key)
         if previous:
             MT_PROTO_MEDIA_CACHE_BYTES -= len(previous.get("media_bytes") or b"")
+        is_outgoing = bool(getattr(message, "out", False))
+        sender_user_id = None if is_outgoing else (int(getattr(message, "sender_id", 0) or chat_id) or None)
+        sender_username = str(getattr(entity, "username", None) or "").strip().lstrip("@") or None
+        sender_display_name = "Вы" if is_outgoing else (" ".join(x for x in (
+            getattr(entity, "first_name", None), getattr(entity, "last_name", None)
+        ) if x) or sender_username or str(chat_title)[:160])
         snapshot = {
             "chat_id": int(chat_id), "message_id": int(message.id),
             "message_date": date_value.isoformat() if date_value else now_iso(),
             "chat_title": str(chat_title)[:256],
-            "sender_label": "Вы" if bool(getattr(message, "out", False)) else str(chat_title)[:160],
+            "sender_label": str(sender_display_name)[:160],
+            "sender_user_id": sender_user_id, "sender_username": sender_username,
             "text_content": content, "caption": content if media_type else "",
             "media_type": media_type, "media_file_id": None, "media_path": None,
             "media_bytes": None, "media_error": None,
             "media_capture_pending": bool(media_type),
             "media_ttl_seconds": getattr(getattr(message, "media", None), "ttl_seconds", None),
-            "is_outgoing": int(bool(getattr(message, "out", False))),
+            "is_outgoing": int(is_outgoing),
             "cached_at": time.time()
         }
         MT_PROTO_MESSAGE_CACHE[cache_key] = snapshot
@@ -6032,11 +6123,12 @@ async def recover_business_snapshot_from_mtproto(connection_id: str, owner_tg_id
     with db_connect() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO plus_business_messages("
-            "connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,"
+            "connection_id,owner_tg_id,chat_id,message_id,message_date,chat_title,sender_label,sender_user_id,sender_username,"
             "text_content,caption,media_type,media_file_id,media_path,is_outgoing,updated_at"
-            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (str(connection_id), int(owner_tg_id), int(chat_id), int(message_id),
              snapshot.get("message_date"), snapshot.get("chat_title"), snapshot.get("sender_label"),
+             snapshot.get("sender_user_id"), snapshot.get("sender_username"),
              snapshot.get("text_content"), snapshot.get("caption"), snapshot.get("media_type"),
              None, media_path, int(snapshot.get("is_outgoing", 0)), now_iso())
         )
@@ -6104,8 +6196,6 @@ async def attach_mtproto_business_snapshot_listener(owner_tg_id: int):
 
 
 async def handle_edited_business_message(message: Message):
-    logging.info("LINKCHECK PLUS: edited_business_message handler started connection=%s chat=%s message=%s",
-                 message.business_connection_id, message.chat.id, message.message_id)
     connection_id = message.business_connection_id
     if not connection_id:
         logging.warning("LINKCHECK PLUS: edited_business_message without connection id")
@@ -6132,56 +6222,48 @@ async def handle_edited_business_message(message: Message):
     if not connection:
         logging.warning("LINKCHECK PLUS: edit received for unknown/disabled connection %s", connection_id)
         return
+
+    owner_id = int(connection["owner_tg_id"])
+    sub = plus_subscription_for(owner_id)
+    if not sub or not sub["active"]:
+        return
+
+    # The owner's own messages are archived only to identify their later
+    # deletion event; their edits are never sent as PLUS notifications.
+    if business_message_is_outgoing(message, owner_id) or (old and bool(old["is_outgoing"])):
+        await handle_business_message(message)
+        logging.info("LINKCHECK PLUS: owner's own edited message ignored owner=%s chat=%s message=%s",
+                     owner_id, message.chat.id, message.message_id)
+        return
+
     if not old:
         for _ in range(10):
             old = await recover_business_snapshot_from_mtproto(
-                connection_id, int(connection["owner_tg_id"]), message.chat.id, message.message_id
+                connection_id, owner_id, message.chat.id, message.message_id
             )
             if old:
                 break
             await asyncio.sleep(0.1)
-    elif old["media_type"] and not old["media_path"]:
-        # The text row may already exist even when its asynchronous-era media
-        # download failed. Recover the RAM-only MTProto attachment if available.
-        recovered = await recover_business_snapshot_from_mtproto(
-            connection_id, int(connection["owner_tg_id"]), message.chat.id, message.message_id
-        )
-        if recovered:
-            old = recovered
-    sub = plus_subscription_for(int(connection["owner_tg_id"]))
-    if not sub or not sub["active"]:
-        return
-    if old:
-        delivered = await send_business_snapshot(connection["user_chat_id"], old, "Сообщение до редактирования")
-        if not delivered:
-            logging.error(
-                "LINKCHECK PLUS: original edited-message snapshot retained; new version not written because notification failed connection=%s chat=%s message=%s",
-                connection_id, message.chat.id, message.message_id
-            )
-            return
-    else:
-        logging.error(
-            "LINKCHECK PLUS: original snapshot missing in both Bot API archive and MTProto cache owner=%s chat=%s message=%s",
-            connection["owner_tg_id"], message.chat.id, message.message_id
-        )
-        current_text = business_message_content(message) or "[Сообщение без текстового содержимого]"
-        await bot.send_message(
-            connection["user_chat_id"],
-            "<b>LINKCHECK PLUS: получена новая версия сообщения</b>\n"
-            f"Чат: {html.escape(message.chat.title or message.chat.username or str(message.chat.id))}\n"
-            "<b>Текст, который Telegram передал после изменения:</b>\n"
-            f"<pre>{html.escape(current_text[:3000])}</pre>\n"
-            "<i>Исходная версия не пришла ни в архив Bot API, ни в резервный кэш MTProto. "
-            "Telegram не предоставляет старый текст в событии редактирования.</i>"
-        )
+
+    old_record = dict(old) if old else None
     await handle_business_message(message)
     with db_connect() as conn:
         updated = conn.execute(
             "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
             (connection_id, message.chat.id, message.message_id)
         ).fetchone()
-    if updated:
-        await send_business_snapshot(connection["user_chat_id"], updated, "Новая версия сообщения")
+    if not updated:
+        logging.error("LINKCHECK PLUS: edited message could not be reloaded after snapshot update connection=%s chat=%s message=%s",
+                      connection_id, message.chat.id, message.message_id)
+        return
+
+    delivered = await send_business_event_notification(
+        connection["user_chat_id"], old_record, dict(updated),
+        "Сообщение изменено"
+    )
+    if not delivered:
+        logging.error("LINKCHECK PLUS: edit notification failed connection=%s chat=%s message=%s",
+                      connection_id, message.chat.id, message.message_id)
 
 
 async def handle_deleted_business_messages(event):
@@ -6209,6 +6291,7 @@ async def handle_deleted_business_messages(event):
     if not sub or not sub["active"]:
         logging.info("LINKCHECK PLUS: delete update ignored because subscription inactive owner=%s", connection["owner_tg_id"])
         return
+
     rows, missing = [], []
     with db_connect() as conn:
         for message_id in event.message_ids:
@@ -6220,8 +6303,7 @@ async def handle_deleted_business_messages(event):
                 rows.append(dict(row))
             else:
                 missing.append(int(message_id))
-    # Recover media bytes for known text snapshots whose Bot API file download
-    # failed; the original metadata row must not hide the MTProto media backup.
+
     for index, record in enumerate(rows):
         if record.get("media_type") and not record.get("media_path"):
             recovered_row = await recover_business_snapshot_from_mtproto(
@@ -6230,6 +6312,7 @@ async def handle_deleted_business_messages(event):
             )
             if recovered_row:
                 rows[index] = dict(recovered_row)
+
     recovered = []
     for message_id in list(missing):
         row = await recover_business_snapshot_from_mtproto(
@@ -6239,15 +6322,34 @@ async def handle_deleted_business_messages(event):
             recovered.append(dict(row))
             missing.remove(int(message_id))
     rows.extend(recovered)
-    logging.info(
-        "LINKCHECK PLUS: deleted_business_messages owner=%s chat=%s ids=%s restored=%s missing=%s",
-        connection["owner_tg_id"], event.chat.id, list(event.message_ids), len(rows), len(missing)
-    )
+
     for record in rows:
-        delivered = await send_business_snapshot(connection["user_chat_id"], record, "Сообщение удалено")
+        # Telegram's deleted_business_messages update does not identify the
+        # deleting actor. For a private Business chat, is_outgoing identifies
+        # the connected account's own message; suppress it and clean its cache.
+        media_path = record.get("media_path")
+        if bool(record.get("is_outgoing")):
+            with db_connect() as conn:
+                conn.execute(
+                    "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
+                    (event.business_connection_id, event.chat.id, record["message_id"])
+                )
+            if media_path:
+                try:
+                    if os.path.isfile(media_path):
+                        os.remove(media_path)
+                except OSError:
+                    logging.exception("LINKCHECK PLUS: could not remove owner's deleted-message media snapshot")
+            logging.info("LINKCHECK PLUS: owner's own deleted message ignored owner=%s chat=%s message=%s",
+                         connection["owner_tg_id"], event.chat.id, record["message_id"])
+            continue
+
+        delivered = await send_business_event_notification(
+            connection["user_chat_id"], record, None, "Сообщение удалено"
+        )
         if not delivered:
             logging.error(
-                "LINKCHECK PLUS: deleted message snapshot retained for retry because notification failed connection=%s chat=%s message=%s",
+                "LINKCHECK PLUS: deleted message snapshot retained because notification failed connection=%s chat=%s message=%s",
                 event.business_connection_id, event.chat.id, record["message_id"]
             )
             continue
@@ -6256,21 +6358,19 @@ async def handle_deleted_business_messages(event):
                 "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
                 (event.business_connection_id, event.chat.id, record["message_id"])
             )
-        media_path = record.get("media_path")
         if media_path:
             try:
                 if os.path.isfile(media_path):
                     os.remove(media_path)
             except OSError:
                 logging.exception("LINKCHECK PLUS: could not remove deleted-message media snapshot")
+
     if missing:
         await bot.send_message(
             connection["user_chat_id"],
-            "<b>LINKCHECK PLUS: Telegram сообщил об удалении сообщения, но его копии нет в хранилище</b>\n"
-            f"Чат: {html.escape(event.chat.title or event.chat.username or str(event.chat.id))}\n"
-            f"ID сообщений: {', '.join(map(str, missing))}\n\n"
-            "Это означает, что исходное сообщение не было сохранено до удаления (например, бот не получил событие нового сообщения, "
-            "подписка тогда не была активна или Telegram не передал содержимое). LINKCHECK не может запросить удалённый текст у Telegram задним числом."
+            "<b>LINKCHECK PLUS</b>\n"
+            f"В чате «{html.escape(event.chat.title or event.chat.username or 'Telegram')}» удалено сообщение, "
+            "но его исходная копия не сохранилась. Telegram не передаёт содержимое задним числом."
         )
 
 
