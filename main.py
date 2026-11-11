@@ -6569,7 +6569,21 @@ async def start_telegram_checker():
             retry_delay=1,
             auto_reconnect=True
         )
-        await tg_client.start()
+        # Do not call start() here: in a non-interactive container it may
+        # prompt for a phone number and crash with EOFError when no session exists.
+        await tg_client.connect()
+        if not await tg_client.is_user_authorized():
+            tg_start_error = (
+                "Telethon session is missing or not authorized. "
+                "Create a new authorized session and set TG_SESSION to its path."
+            )
+            logging.warning(
+                "%s. Резервный MTProto отключён; публичная проверка через страницы t.me остаётся доступной.",
+                tg_start_error
+            )
+            await tg_client.disconnect()
+            tg_client = None
+            return
         tg_ready = True
         me = await tg_client.get_me()
         logging.info("LINKCHECK Telethon session identity: id=%s username=%s",
