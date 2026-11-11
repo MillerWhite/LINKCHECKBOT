@@ -6215,14 +6215,20 @@ async def handle_deleted_business_messages(event):
                 event.business_connection_id, event.chat.id, record["message_id"]
             )
             continue
+        deleted_at = now_iso()
         with db_connect() as conn:
             conn.execute(
                 "UPDATE plus_business_messages SET deleted_at=?,updated_at=? "
                 "WHERE connection_id=? AND chat_id=? AND message_id=? AND deleted_at IS NULL",
-                (now_iso(), now_iso(), event.business_connection_id, event.chat.id, record["message_id"])
+                (deleted_at, deleted_at, event.business_connection_id, event.chat.id, record["message_id"])
             )
         # Keep the original text and downloaded attachment in the archive until
         # the normal retention cleanup expires the record.
+        if media_path and os.path.isfile(media_path):
+            try:
+                os.utime(media_path, None)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not refresh deleted-message media retention timestamp")
 
     if missing:
         # The deletion update does not say who deleted the message. If no
