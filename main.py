@@ -39,7 +39,8 @@ from aiogram.types import (
     InlineKeyboardButton,
     LabeledPrice,
     PreCheckoutQuery,
-    FSInputFile
+    FSInputFile,
+    MenuButtonWebApp
 )
 
 from dotenv import load_dotenv
@@ -5556,7 +5557,7 @@ def business_media(message: Message):
     return None, None
 
 
-async def persist_business_media_snapshot(message: Message, connection_id: str, file_id: str | None, old_media_path: str | None):
+async def persist_business_media_snapshot(message: Message, connection_id: str, file_id: str | None, old_media_path: str | None, preserve_old_media: bool = False):
     """Persist the original Business media before the ordered update handler returns."""
     try:
         media_path = await asyncio.wait_for(persist_business_media(message, file_id), timeout=30)
@@ -5567,7 +5568,7 @@ async def persist_business_media_snapshot(message: Message, connection_id: str, 
                     "WHERE connection_id=? AND chat_id=? AND message_id=?",
                     (media_path, now_iso(), connection_id, message.chat.id, message.message_id)
                 )
-        if old_media_path and media_path and old_media_path != media_path:
+        if not preserve_old_media and old_media_path and media_path and old_media_path != media_path:
             try:
                 if os.path.isfile(old_media_path):
                     os.remove(old_media_path)
@@ -5585,7 +5586,7 @@ async def persist_business_media(message: Message, file_id: str | None) -> str |
     media_dir = os.path.join(DATA_DIR, "plus_media")
     os.makedirs(media_dir, exist_ok=True)
     connection_part = re.sub(r"[^A-Za-z0-9_-]", "_", str(message.business_connection_id or "connection"))[:40]
-    filename = f"{connection_part}_{int(message.chat.id)}_{int(message.message_id)}"
+    filename = f"{connection_part}_{int(message.chat.id)}_{int(message.message_id)}_{secrets.token_hex(5)}"
     path = os.path.join(media_dir, filename)
     try:
         downloaded = await bot.download(file_id, destination=path)
@@ -5746,7 +5747,7 @@ async def refresh_business_connection(connection_id: str):
     return live_connection
 
 
-async def handle_business_message(message: Message):
+async def handle_business_message(message: Message, preserve_old_media: bool = False):
     logging.info("LINKCHECK PLUS: business_message handler started connection=%s chat=%s message=%s",
                  message.business_connection_id, message.chat.id, message.message_id)
     connection_id = message.business_connection_id
@@ -5821,7 +5822,8 @@ async def handle_business_message(message: Message):
             logging.exception("LINKCHECK PLUS: could not remove old outgoing-message media")
     if not is_outgoing:
         await persist_business_media_snapshot(
-            message, connection_id, media_file_id, old["media_path"] if old else None
+            message, connection_id, media_file_id, old["media_path"] if old else None,
+            preserve_old_media=preserve_old_media
         )
     if media_type and not is_outgoing:
         # If Bot API could not download temporary/protected media, immediately
@@ -5916,9 +5918,16 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
             f"<blockquote>{html.escape(deleted_text[:3000])}</blockquote>"
         )
 
-    media_type = business_record_value(source_record, "media_type")
-    media_path = business_record_value(source_record, "media_path")
-    file_id = business_record_value(source_record, "media_file_id")
+    # For edits, attach the original media when it existed. The after-snapshot
+    # is still shown in the text, but the attachment must represent what was
+    # actually sent before the edit.
+    media_record = before_record if (
+        after_record is not None and before_record is not None
+        and (business_record_value(before_record, "media_type") or business_record_value(before_record, "media_path"))
+    ) else source_record
+    media_type = business_record_value(media_record, "media_type")
+    media_path = business_record_value(media_record, "media_path")
+    file_id = business_record_value(media_record, "media_file_id")
     # For stickers, prefer the original Bot API file_id. Re-uploading a
     # downloaded snapshot can make Telegram treat it as a generic file or
     # reject animated/video sticker formats; file_id preserves the sticker.
@@ -6305,7 +6314,7 @@ async def handle_edited_business_message(message: Message):
             await asyncio.sleep(0.1)
 
     old_record = dict(old) if old else None
-    await handle_business_message(message)
+    await handle_business_message(message, preserve_old_media=True)
     with db_connect() as conn:
         updated = conn.execute(
             "SELECT * FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -6320,6 +6329,13 @@ async def handle_edited_business_message(message: Message):
         connection["user_chat_id"], old_record, dict(updated),
         "Сообщение изменено"
     )
+    if old_record:
+        old_media_path = old_record.get("media_path")
+        if old_media_path and os.path.isfile(old_media_path):
+            try:
+                os.remove(old_media_path)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not remove previous edited-media snapshot")
     if not delivered:
         logging.error("LINKCHECK PLUS: edit notification failed connection=%s chat=%s message=%s",
                       connection_id, message.chat.id, message.message_id)
@@ -6790,6 +6806,17 @@ async def main():
     logging.info("Автоматическая массовая MTProto-проверка стартовых проектов отключена.")
     try:
         logging.info("Запуск LINKCHECK...")
+        if MINIAPP_URL:
+            try:
+                await bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(
+                        text="LINKCHECK",
+                        web_app=WebAppInfo(url=MINIAPP_URL)
+                    )
+                )
+                logging.info("LINKCHECK Mini App configured as the bot chat menu button")
+            except Exception:
+                logging.exception("Could not configure LINKCHECK Mini App chat menu button")
         allowed_updates = set(dp.resolve_used_update_types())
         allowed_updates.update({
             "message", "callback_query", "pre_checkout_query",
