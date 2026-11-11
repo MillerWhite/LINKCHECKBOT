@@ -5940,7 +5940,7 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
                 # Stickers cannot have captions: send a short attribution
                 # message followed by the actual Telegram sticker.
                 sticker_note = (
-                    f"<b>Стикер</b>\nПользователь: {sender_html}\n"
+                    f"<b>Стикер:</b> {sender_html}\n"
                     f"<b>{html.escape(heading)}</b>"
                 )
                 await bot.send_message(owner_chat_id, sticker_note, disable_web_page_preview=True)
