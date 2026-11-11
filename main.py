@@ -6251,8 +6251,8 @@ async def handle_edited_business_message(message: Message):
     if not sub or not sub["active"]:
         return
 
-    # The owner's own messages are archived only to identify their later
-    # deletion event; their edits are never sent as PLUS notifications.
+    # Keep only the minimal outgoing marker needed to recognize a later
+    # deletion event; never archive or notify about the owner's own content.
     if business_message_is_outgoing(message, owner_id) or (old and bool(old["is_outgoing"])):
         await handle_business_message(message)
         logging.info("LINKCHECK PLUS: owner's own edited message ignored owner=%s chat=%s message=%s",
