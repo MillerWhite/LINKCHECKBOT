@@ -4993,7 +4993,7 @@ PLUS_TEST_DAYS = 3
 
 def plus_plans():
     with db_connect() as conn:
-        rows = conn.execute("SELECT * FROM plus_plan_settings ORDER BY CASE plan_code WHEN '1m' THEN 1 WHEN '6m' THEN 2 ELSE 3 END").fetchall()
+        rows = conn.execute("SELECT * FROM plus_plan_settings ORDER BY days ASC, title COLLATE NOCASE ASC, plan_code ASC").fetchall()
     plans = {}
     for row in rows:
         item = dict(row)
