@@ -30,6 +30,18 @@ def normalize_https_url(value: str | None) -> str:
     ))
 
 
+def derive_bothost_domain(bot_id: str | None) -> str:
+    """
+    Derive Bothost's automatic hostname from its documented BOT_ID format.
+    Bothost replaces underscores with hyphens and appends .bothost.tech.
+    """
+    identifier = str(bot_id or "").strip()
+    if not identifier.startswith("bot_"):
+        return ""
+    hostname = identifier.replace("_", "-") + ".bothost.tech"
+    return normalize_https_url(hostname)
+
+
 def resolve_miniapp_url(configured_url: str | None, platform_domain: str | None) -> str:
     """
     Prefer Bothost's assigned DOMAIN when MINIAPP_URL is stale.
