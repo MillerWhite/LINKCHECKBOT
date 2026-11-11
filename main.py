@@ -6473,7 +6473,10 @@ async def security_middleware(request, handler):
         logging.exception("Ошибка API: %s %s", request.method, request.path)
         return json_error("Внутренняя ошибка сервера", 500)
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    # Telegram Desktop and some mobile clients use a cross-origin WebView/iframe.
+    # SAMEORIGIN blocks the Mini App before its JavaScript can start.
+    if request.path != "/":
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
