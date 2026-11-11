@@ -70,6 +70,19 @@ class SourceIntegrityTests(unittest.TestCase):
                     msg=f"JavaScript syntax error in {path.name}: {result.stderr}",
                 )
 
+    def test_fetch_retry_runtime_scenarios(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js is not installed")
+        result = subprocess.run(
+            [node, str(ROOT / "tests" / "fetch_retry.test.cjs")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("6 fetch resilience scenarios passed", result.stdout)
+
     def test_every_literal_frontend_api_route_exists(self):
         routes = {
             match.group(1)
