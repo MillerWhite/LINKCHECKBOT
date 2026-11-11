@@ -81,7 +81,12 @@ ADMIN_IDS = {
     if x.strip().isdigit()
 }
 
-DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "linkcheck.db"))
+# On Bothost, always use the persistent data directory.
+# Ignore a stale DB_PATH environment variable pointing to /app/linkcheck.db.
+if APP_DIR == "/app" and os.path.isdir("/app/data"):
+    DB_PATH = os.path.join(DATA_DIR, "linkcheck.db")
+else:
+    DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "linkcheck.db"))
 PORT = int(os.getenv("PORT", "8080"))
 PLUS_PAYMENTS_ENABLED = os.getenv("PLUS_PAYMENTS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "86400"))
