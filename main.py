@@ -5919,7 +5919,13 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
     media_type = business_record_value(source_record, "media_type")
     media_path = business_record_value(source_record, "media_path")
     file_id = business_record_value(source_record, "media_file_id")
-    source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
+    # For stickers, prefer the original Bot API file_id. Re-uploading a
+    # downloaded snapshot can make Telegram treat it as a generic file or
+    # reject animated/video sticker formats; file_id preserves the sticker.
+    if media_type == "sticker" and file_id:
+        source = file_id
+    else:
+        source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
 
     # Telegram captions are limited to 1,024 characters. Build a shorter,
     # balanced caption so both edit versions and all HTML tags remain intact.
