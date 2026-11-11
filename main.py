@@ -47,6 +47,7 @@ from dotenv import load_dotenv
 
 try:
     from telethon import TelegramClient, functions, events
+    from telethon.sessions import StringSession
     from telethon.errors import FloodWaitError, RPCError
     from telethon.tl.types import (
         User,
@@ -56,6 +57,7 @@ try:
     )
 except ImportError:
     TelegramClient = None
+    StringSession = None
     functions = None
     events = None
     FloodWaitError = RPCError = Exception
@@ -96,6 +98,7 @@ INIT_DATA_MAX_AGE = int(os.getenv("INIT_DATA_MAX_AGE", "86400"))
 TG_API_ID = int(os.getenv("TG_API_ID", os.getenv("TELEGRAM_API_ID", "0")) or "0")
 TG_API_HASH = os.getenv("TG_API_HASH", os.getenv("TELEGRAM_API_HASH", "")).strip()
 TG_SESSION = os.getenv("TG_SESSION", os.path.join(DATA_DIR, "linkcheck_telegram")).strip()
+SESSION_STRING = os.getenv("SESSION_STRING", "").strip()
 
 # Ensure an explicitly configured database path also has an existing parent.
 _db_parent = os.path.dirname(os.path.abspath(DB_PATH))
@@ -6559,8 +6562,9 @@ async def start_telegram_checker():
         logging.warning("%s. Резервный MTProto отключён; публичная проверка через t.me остаётся доступной.", tg_start_error)
         return
     try:
+        telethon_session = StringSession(SESSION_STRING) if SESSION_STRING else TG_SESSION
         tg_client = TelegramClient(
-            TG_SESSION,
+            telethon_session,
             TG_API_ID,
             TG_API_HASH,
             flood_sleep_threshold=0,
