@@ -1275,6 +1275,22 @@ def init_db():
         ensure_column(conn, "plus_business_messages", "media_path", "TEXT")
         ensure_column(conn, "plus_business_messages", "sender_user_id", "INTEGER")
         ensure_column(conn, "plus_business_messages", "sender_username", "TEXT")
+        # Scrub owner-authored message contents retained by earlier versions;
+        # keep only an empty marker so their later deletion can be ignored.
+        outgoing_media_paths = [row["media_path"] for row in conn.execute(
+            "SELECT media_path FROM plus_business_messages WHERE is_outgoing=1 AND media_path IS NOT NULL"
+        ).fetchall()]
+        conn.execute(
+            "UPDATE plus_business_messages SET sender_label='Вы',sender_user_id=NULL,sender_username=NULL,"
+            "text_content='',caption='',media_type=NULL,media_file_id=NULL,media_path=NULL "
+            "WHERE is_outgoing=1"
+        )
+        for outgoing_media_path in outgoing_media_paths:
+            try:
+                if outgoing_media_path and os.path.isfile(outgoing_media_path):
+                    os.remove(outgoing_media_path)
+            except OSError:
+                logging.exception("LINKCHECK PLUS: could not remove legacy outgoing-message media")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_plus_business_messages_owner "
             "ON plus_business_messages(owner_tg_id, updated_at DESC)"
