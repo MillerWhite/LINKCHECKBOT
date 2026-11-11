@@ -5762,9 +5762,12 @@ async def handle_business_message(message: Message):
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
     sender_user_id, sender_username = business_sender_user_data(message)
+    message_caption = message.caption or ""
+    sender_label = business_sender_label(message)
     if is_outgoing:
-        media_type, media_file_id, content = None, None, ""
+        media_type, media_file_id, content, message_caption = None, None, "", ""
         sender_user_id, sender_username = None, None
+        sender_label = "Вы"
     with db_connect() as conn:
         old = conn.execute(
             "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -5780,8 +5783,8 @@ async def handle_business_message(message: Message):
             "ELSE COALESCE(excluded.media_path,plus_business_messages.media_path) END,"
             "is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
-             message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
-             sender_user_id, sender_username, content, message.caption or "", media_type, media_file_id,
+             message.date.isoformat() if message.date else None, chat_title, sender_label,
+             sender_user_id, sender_username, content, message_caption, media_type, media_file_id,
              old["media_path"] if old else None, int(is_outgoing), now_iso())
         )
         conn.execute(
@@ -5896,12 +5899,20 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
     file_id = business_record_value(source_record, "media_file_id")
     source = FSInputFile(media_path) if media_path and os.path.isfile(media_path) else file_id
 
-    # Telegram captions are limited to 1,024 characters. Keep both versions
-    # readable in one media message; text-only notifications allow up to 4,096.
+    # Telegram captions are limited to 1,024 characters. Build a shorter,
+    # balanced caption so both edit versions and all HTML tags remain intact.
     if source and media_type:
-        caption = body[:1000]
-        if len(body) > 1000:
-            caption = body[:997] + "..."
+        if after_record is not None:
+            caption = (
+                f"<b>{html.escape(heading)}</b>\\nПользователь: {sender_html}\\n\\n"
+                f"<b>До:</b>\\n<blockquote>{html.escape(before_text[:280])}</blockquote>\\n"
+                f"<b>После:</b>\\n<blockquote>{html.escape(after_text[:280])}</blockquote>"
+            )
+        else:
+            caption = (
+                f"<b>{html.escape(heading)}</b>\\nПользователь: {sender_html}\\n\\n"
+                f"<blockquote>{html.escape(deleted_text[:650])}</blockquote>"
+            )
         try:
             if media_type in {"sticker", "video_note"}:
                 # Telegram has no caption field for sendSticker/sendVideoNote.
