@@ -6695,7 +6695,7 @@ async def main():
     await seed_public_catalog()
     runner = await start_web_server()
     logging.info(
-        "LINKCHECK hosting config: DOMAIN_present=%s DOMAIN_host=%s MINIAPP_host=%s "
+        "LINKCHECK hosting config: DOMAIN_source=%s DOMAIN_host=%s MINIAPP_host=%s "
         "MINIAPP_URL_source=%s PORT=%s bind_host=0.0.0.0",
         PLATFORM_DOMAIN_SOURCE,
         _platform_domain_host or "<missing>",
