@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit
 
-from linkcheck_config import normalize_https_url, resolve_miniapp_url
+from linkcheck_config import derive_bothost_domain, normalize_https_url, resolve_miniapp_url
 
 import aiohttp
 from aiohttp import web
@@ -78,13 +78,19 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CONFIGURED_MINIAPP_URL = os.getenv("MINIAPP_URL", "").strip()
+BOT_ID = os.getenv("BOT_ID", "").strip()
 PLATFORM_DOMAIN = os.getenv("DOMAIN", "").strip()
+PLATFORM_DOMAIN_SOURCE = "DOMAIN" if PLATFORM_DOMAIN else "NONE"
+if not PLATFORM_DOMAIN:
+    PLATFORM_DOMAIN = derive_bothost_domain(BOT_ID)
+    if PLATFORM_DOMAIN:
+        PLATFORM_DOMAIN_SOURCE = "BOT_ID"
 PLATFORM_DOMAIN_URL = normalize_https_url(PLATFORM_DOMAIN)
 MINIAPP_URL = resolve_miniapp_url(CONFIGURED_MINIAPP_URL, PLATFORM_DOMAIN)
 _configured_miniapp_host = urlsplit(normalize_https_url(CONFIGURED_MINIAPP_URL)).hostname
 _platform_domain_host = urlsplit(PLATFORM_DOMAIN_URL).hostname
 MINIAPP_URL_SOURCE = (
-    "DOMAIN"
+    PLATFORM_DOMAIN_SOURCE
     if PLATFORM_DOMAIN_URL and _configured_miniapp_host != _platform_domain_host
     else "MINIAPP_URL"
 )
@@ -6372,6 +6378,7 @@ async def handle_health(request):
         "bind_host": "0.0.0.0",
         "domain_configured": bool(PLATFORM_DOMAIN_URL),
         "platform_domain_host": _platform_domain_host or None,
+        "platform_domain_source": PLATFORM_DOMAIN_SOURCE,
         "miniapp_host": miniapp_host,
         "miniapp_url_configured": bool(MINIAPP_URL),
         "miniapp_url_source": MINIAPP_URL_SOURCE,
@@ -6690,7 +6697,7 @@ async def main():
     logging.info(
         "LINKCHECK hosting config: DOMAIN_present=%s DOMAIN_host=%s MINIAPP_host=%s "
         "MINIAPP_URL_source=%s PORT=%s bind_host=0.0.0.0",
-        bool(PLATFORM_DOMAIN_URL),
+        PLATFORM_DOMAIN_SOURCE,
         _platform_domain_host or "<missing>",
         urlsplit(MINIAPP_URL).hostname if MINIAPP_URL else "<missing>",
         MINIAPP_URL_SOURCE,
