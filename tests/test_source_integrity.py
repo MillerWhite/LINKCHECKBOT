@@ -156,6 +156,8 @@ class SourceIntegrityTests(unittest.TestCase):
         self.assertIn('app.router.add_get("/health", handle_health)', self.backend)
         self.assertIn('"service": "LINKCHECK"', self.backend)
         self.assertIn('"miniapp_url_source": MINIAPP_URL_SOURCE', self.backend)
+        self.assertIn("async def log_platform_domain_dns_status()", self.backend)
+        self.assertIn("await log_platform_domain_dns_status()", self.backend)
 
     def test_public_stats_do_not_wait_for_telegram_auth(self):
         self.assertIn("loadStats();\ninitUser().then(()=>loadRecent());", self.html)
