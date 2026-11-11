@@ -5904,13 +5904,13 @@ async def send_business_event_notification(owner_chat_id: int, before_record, af
     if source and media_type:
         if after_record is not None:
             caption = (
-                f"<b>{html.escape(heading)}</b>\\nПользователь: {sender_html}\\n\\n"
-                f"<b>До:</b>\\n<blockquote>{html.escape(before_text[:280])}</blockquote>\\n"
-                f"<b>После:</b>\\n<blockquote>{html.escape(after_text[:280])}</blockquote>"
+                f"<b>{html.escape(heading)}</b>\nПользователь: {sender_html}\n\n"
+                f"<b>До:</b>\n<blockquote>{html.escape(before_text[:280])}</blockquote>\n"
+                f"<b>После:</b>\n<blockquote>{html.escape(after_text[:280])}</blockquote>"
             )
         else:
             caption = (
-                f"<b>{html.escape(heading)}</b>\\nПользователь: {sender_html}\\n\\n"
+                f"<b>{html.escape(heading)}</b>\nПользователь: {sender_html}\n\n"
                 f"<blockquote>{html.escape(deleted_text[:650])}</blockquote>"
             )
         try:
