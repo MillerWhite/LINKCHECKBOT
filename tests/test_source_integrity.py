@@ -119,6 +119,11 @@ class SourceIntegrityTests(unittest.TestCase):
         self.assertIn("telegram-webapp-sdk-failed", self.html)
         self.assertIn("attempt>2", self.html)
 
+    def test_telethon_startup_never_prompts_for_interactive_input(self):
+        self.assertIn("await tg_client.connect()", self.backend)
+        self.assertIn("if not await tg_client.is_user_authorized():", self.backend)
+        self.assertNotIn("await tg_client.start()", self.backend)
+
     def test_public_stats_do_not_wait_for_telegram_auth(self):
         self.assertIn("loadStats();\ninitUser().then(()=>loadRecent());", self.html)
 
