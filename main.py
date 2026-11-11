@@ -23,6 +23,8 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, unquote, urljoin, urlsplit
 
+from linkcheck_config import normalize_https_url, resolve_miniapp_url
+
 import aiohttp
 from aiohttp import web
 
@@ -75,7 +77,17 @@ DATA_DIR = os.path.abspath(os.getenv("DATA_DIR", DEFAULT_DATA_DIR))
 os.makedirs(DATA_DIR, exist_ok=True)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
-MINIAPP_URL = os.getenv("MINIAPP_URL", "").strip()
+CONFIGURED_MINIAPP_URL = os.getenv("MINIAPP_URL", "").strip()
+PLATFORM_DOMAIN = os.getenv("DOMAIN", "").strip()
+PLATFORM_DOMAIN_URL = normalize_https_url(PLATFORM_DOMAIN)
+MINIAPP_URL = resolve_miniapp_url(CONFIGURED_MINIAPP_URL, PLATFORM_DOMAIN)
+_configured_miniapp_host = urlsplit(normalize_https_url(CONFIGURED_MINIAPP_URL)).hostname
+_platform_domain_host = urlsplit(PLATFORM_DOMAIN_URL).hostname
+MINIAPP_URL_SOURCE = (
+    "DOMAIN"
+    if PLATFORM_DOMAIN_URL and _configured_miniapp_host != _platform_domain_host
+    else "MINIAPP_URL"
+)
 
 ADMIN_IDS = {
     int(x.strip())
@@ -164,6 +176,23 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
+
+if PLATFORM_DOMAIN_URL:
+    logging.info("Bothost assigned domain detected: %s", _platform_domain_host)
+else:
+    logging.warning("Bothost DOMAIN is not set; LINKCHECK will rely on MINIAPP_URL.")
+if CONFIGURED_MINIAPP_URL and PLATFORM_DOMAIN_URL and _configured_miniapp_host != _platform_domain_host:
+    logging.warning(
+        "Configured MINIAPP_URL hostname differs from Bothost DOMAIN; using the platform-assigned domain."
+    )
+if MINIAPP_URL:
+    logging.info(
+        "LINKCHECK Mini App URL source=%s host=%s",
+        MINIAPP_URL_SOURCE,
+        urlsplit(MINIAPP_URL).hostname
+    )
+else:
+    logging.warning("Neither Bothost DOMAIN nor MINIAPP_URL is configured; Mini App menu button will not be set.")
 
 bot = Bot(
     token=BOT_TOKEN,
@@ -6333,6 +6362,18 @@ async def handle_index(request):
     return web.FileResponse(os.path.join(APP_DIR, "miniapp.html"), headers={"Cache-Control": "no-store"})
 
 
+async def handle_health(request):
+    """Public, side-effect-free health check for Bothost reverse-proxy diagnostics."""
+    return web.json_response({
+        "ok": True,
+        "service": "LINKCHECK",
+        "port": PORT,
+        "domain_configured": bool(PLATFORM_DOMAIN_URL),
+        "miniapp_url_configured": bool(MINIAPP_URL),
+        "miniapp_url_source": MINIAPP_URL_SOURCE,
+    })
+
+
 async def handle_privacy(request):
     return web.FileResponse(os.path.join(APP_DIR, "privacy.html"), headers={"Cache-Control": "public, max-age=300"})
 
@@ -6488,6 +6529,7 @@ async def security_middleware(request, handler):
 async def start_web_server():
     app = web.Application(middlewares=[security_middleware], client_max_size=9 * 1024 * 1024)
     app.router.add_get("/", handle_index)
+    app.router.add_get("/health", handle_health)
     app.router.add_get("/privacy", handle_privacy)
     app.router.add_get("/api/founder", api_founder)
     app.router.add_get("/api/founder/avatar", api_founder_avatar)
@@ -6579,7 +6621,7 @@ async def start_telegram_checker():
         if not await tg_client.is_user_authorized():
             tg_start_error = (
                 "Telethon session is missing or not authorized. "
-                "Create a new authorized session and set TG_SESSION to its path."
+                "Create a new authorized session and set SESSION_STRING or TG_SESSION."
             )
             logging.warning(
                 "%s. Резервный MTProto отключён; публичная проверка через страницы t.me остаётся доступной.",
