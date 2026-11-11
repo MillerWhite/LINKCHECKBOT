@@ -6,6 +6,8 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 
+from linkcheck_config import normalize_https_url, resolve_miniapp_url
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,14 +124,38 @@ class SourceIntegrityTests(unittest.TestCase):
     def test_telethon_startup_never_prompts_for_interactive_input(self):
         self.assertIn("await tg_client.connect()", self.backend)
         self.assertIn("if not await tg_client.is_user_authorized():", self.backend)
-        self.assertNotIn("await tg_client.start()", self.backend)
-
-    def test_telethon_startup_never_prompts_for_interactive_input(self):
-        self.assertIn("await tg_client.connect()", self.backend)
-        self.assertIn("if not await tg_client.is_user_authorized():", self.backend)
         self.assertIn("SESSION_STRING = os.getenv", self.backend)
         self.assertIn("StringSession(SESSION_STRING) if SESSION_STRING else TG_SESSION", self.backend)
         self.assertNotIn("await tg_client.start()", self.backend)
+
+    def test_platform_domain_replaces_stale_miniapp_url(self):
+        resolved = resolve_miniapp_url(
+            "https://old-host.example/",
+            "bot-1793993417-4443-nifortt.bothost.tech",
+        )
+        self.assertEqual(
+            resolved,
+            "https://bot-1793993417-4443-nifortt.bothost.tech",
+        )
+
+    def test_configured_path_is_preserved_when_domain_matches(self):
+        resolved = resolve_miniapp_url(
+            "http://my-app.bothost.tech/miniapp/",
+            "my-app.bothost.tech",
+        )
+        self.assertEqual(resolved, "https://my-app.bothost.tech/miniapp")
+
+    def test_configured_url_is_fallback_without_platform_domain(self):
+        self.assertEqual(
+            resolve_miniapp_url("http://example.com/app", ""),
+            "https://example.com/app",
+        )
+        self.assertEqual(normalize_https_url(""), "")
+
+    def test_public_health_endpoint_is_registered(self):
+        self.assertIn('app.router.add_get("/health", handle_health)', self.backend)
+        self.assertIn('"service": "LINKCHECK"', self.backend)
+        self.assertIn('"miniapp_url_source": MINIAPP_URL_SOURCE', self.backend)
 
     def test_public_stats_do_not_wait_for_telegram_auth(self):
         self.assertIn("loadStats();\ninitUser().then(()=>loadRecent());", self.html)
