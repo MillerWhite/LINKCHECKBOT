@@ -6364,11 +6364,15 @@ async def handle_index(request):
 
 async def handle_health(request):
     """Public, side-effect-free health check for Bothost reverse-proxy diagnostics."""
+    miniapp_host = urlsplit(MINIAPP_URL).hostname if MINIAPP_URL else None
     return web.json_response({
         "ok": True,
         "service": "LINKCHECK",
         "port": PORT,
+        "bind_host": "0.0.0.0",
         "domain_configured": bool(PLATFORM_DOMAIN_URL),
+        "platform_domain_host": _platform_domain_host or None,
+        "miniapp_host": miniapp_host,
         "miniapp_url_configured": bool(MINIAPP_URL),
         "miniapp_url_source": MINIAPP_URL_SOURCE,
     })
@@ -6683,6 +6687,15 @@ async def main():
             logging.warning("Initial founder profile sync failed; cached profile will remain available: %s", exc)
     await seed_public_catalog()
     runner = await start_web_server()
+    logging.info(
+        "LINKCHECK hosting config: DOMAIN_present=%s DOMAIN_host=%s MINIAPP_host=%s "
+        "MINIAPP_URL_source=%s PORT=%s bind_host=0.0.0.0",
+        bool(PLATFORM_DOMAIN_URL),
+        _platform_domain_host or "<missing>",
+        urlsplit(MINIAPP_URL).hostname if MINIAPP_URL else "<missing>",
+        MINIAPP_URL_SOURCE,
+        PORT,
+    )
     await log_platform_domain_dns_status()
     watchlist_task = asyncio.create_task(watchlist_monitor_loop(), name="linkcheck-watchlist-monitor")
     plus_cleanup_task = asyncio.create_task(plus_retention_cleanup_loop(), name="linkcheck-plus-retention-cleanup")
