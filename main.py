@@ -6389,11 +6389,13 @@ async def handle_deleted_business_messages(event):
                 logging.exception("LINKCHECK PLUS: could not remove deleted-message media snapshot")
 
     if missing:
-        await bot.send_message(
-            connection["user_chat_id"],
-            "<b>LINKCHECK PLUS</b>\n"
-            f"В чате «{html.escape(event.chat.title or event.chat.username or 'Telegram')}» удалено сообщение, "
-            "но его исходная копия не сохранилась. Telegram не передаёт содержимое задним числом."
+        # The deletion update does not say who deleted the message. If no
+        # original marker exists, do not send a false alert for the owner's
+        # own message and do not expose technical chat/message identifiers.
+        logging.info(
+            "LINKCHECK PLUS: deletion update had no archived snapshot; notification suppressed "
+            "because the deleting actor cannot be identified connection=%s chat=%s count=%s",
+            event.business_connection_id, event.chat.id, len(missing)
         )
 
 
