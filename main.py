@@ -5756,14 +5756,15 @@ async def handle_business_message(message: Message):
         logging.info("LINKCHECK PLUS: skipped message because subscription is inactive owner=%s", connection["owner_tg_id"])
         return
     is_outgoing = business_message_is_outgoing(message, int(connection["owner_tg_id"]))
-    # Store the text/metadata synchronously BEFORE any media download. A slow or
-    # failed download must never prevent the original message from being archived.
-    # Business updates include both incoming and outgoing messages. Keep both:
-    # an outgoing message can also be edited or deleted later.
+    # Keep only a minimal outgoing marker so the later delete update can be
+    # recognized without archiving the owner’s own message content or media.
     media_type, media_file_id = business_media(message)
     chat_title = message.chat.title or message.chat.username or str(message.chat.id)
     content = business_message_content(message)
     sender_user_id, sender_username = business_sender_user_data(message)
+    if is_outgoing:
+        media_type, media_file_id, content = None, None, ""
+        sender_user_id, sender_username = None, None
     with db_connect() as conn:
         old = conn.execute(
             "SELECT media_path FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -5775,7 +5776,8 @@ async def handle_business_message(message: Message):
             "message_date=excluded.message_date,chat_title=excluded.chat_title,sender_label=excluded.sender_label,"
             "sender_user_id=excluded.sender_user_id,sender_username=excluded.sender_username,"
             "text_content=excluded.text_content,caption=excluded.caption,media_type=excluded.media_type,"
-            "media_file_id=excluded.media_file_id,media_path=COALESCE(excluded.media_path,plus_business_messages.media_path),"
+            "media_file_id=excluded.media_file_id,media_path=CASE WHEN excluded.is_outgoing=1 THEN NULL "
+            "ELSE COALESCE(excluded.media_path,plus_business_messages.media_path) END,"
             "is_outgoing=excluded.is_outgoing,updated_at=excluded.updated_at",
             (connection_id, connection["owner_tg_id"], message.chat.id, message.message_id,
              message.date.isoformat() if message.date else None, chat_title, business_sender_label(message),
@@ -5786,12 +5788,19 @@ async def handle_business_message(message: Message):
             "DELETE FROM plus_business_messages WHERE updated_at < ?",
             ((datetime.now(timezone.utc) - timedelta(days=PLUS_MESSAGE_RETENTION_DAYS)).isoformat(),)
         )
-    # Persist media before this ordered Business update returns. A following
-    # edit/delete update must never overtake the original attachment download.
-    await persist_business_media_snapshot(
-        message, connection_id, media_file_id, old["media_path"] if old else None
-    )
-    if media_type:
+    # Outgoing messages are not archived; remove any old attachment left by a
+    # pre-upgrade snapshot. Incoming media is persisted before the ordered update returns.
+    if is_outgoing and old and old["media_path"]:
+        try:
+            if os.path.isfile(old["media_path"]):
+                os.remove(old["media_path"])
+        except OSError:
+            logging.exception("LINKCHECK PLUS: could not remove old outgoing-message media")
+    if not is_outgoing:
+        await persist_business_media_snapshot(
+            message, connection_id, media_file_id, old["media_path"] if old else None
+        )
+    if media_type and not is_outgoing:
         # If Bot API could not download temporary/protected media, immediately
         # promote the matching Telethon copy after Bot API confirms this is a
         # Business message. This preserves one-time media before it disappears.
@@ -5932,6 +5941,9 @@ async def cache_mtproto_message_snapshot(event):
         owner_id = MT_PROTO_CAPTURE_OWNER_ID
         if message is None or chat_id is None or not owner_id:
             return
+        # Never cache the connected account owner’s own messages, including media.
+        if bool(getattr(message, "out", False)):
+            return
         with db_connect() as conn:
             active = conn.execute(
                 "SELECT 1 FROM plus_business_connections WHERE owner_tg_id=? AND is_enabled=1 LIMIT 1",
@@ -5986,12 +5998,12 @@ async def cache_mtproto_message_snapshot(event):
         previous = MT_PROTO_MESSAGE_CACHE.get(cache_key)
         if previous:
             MT_PROTO_MEDIA_CACHE_BYTES -= len(previous.get("media_bytes") or b"")
-        is_outgoing = bool(getattr(message, "out", False))
-        sender_user_id = None if is_outgoing else (int(getattr(message, "sender_id", 0) or chat_id) or None)
+        is_outgoing = False
+        sender_user_id = int(getattr(message, "sender_id", 0) or chat_id) or None
         sender_username = str(getattr(entity, "username", None) or "").strip().lstrip("@") or None
-        sender_display_name = "Вы" if is_outgoing else (" ".join(x for x in (
+        sender_display_name = " ".join(x for x in (
             getattr(entity, "first_name", None), getattr(entity, "last_name", None)
-        ) if x) or sender_username or str(chat_title)[:160])
+        ) if x) or sender_username or str(chat_title)[:160]
         snapshot = {
             "chat_id": int(chat_id), "message_id": int(message.id),
             "message_date": date_value.isoformat() if date_value else now_iso(),
