@@ -6374,6 +6374,33 @@ async def handle_health(request):
     })
 
 
+async def log_platform_domain_dns_status():
+    """Check whether the assigned public hostname resolves from the Bothost container."""
+    host = urlsplit(MINIAPP_URL).hostname
+    if not host:
+        logging.warning("Skipping public-domain DNS check: no Mini App hostname is configured.")
+        return
+
+    try:
+        loop = asyncio.get_running_loop()
+        records = await asyncio.wait_for(
+            loop.getaddrinfo(host, 443, type=socket.SOCK_STREAM),
+            timeout=5,
+        )
+        addresses = sorted({record[4][0] for record in records if record and record[4]})
+        if addresses:
+            logging.info("Public-domain DNS resolved inside container: %s -> %s", host, ", ".join(addresses))
+        else:
+            logging.error("Public-domain DNS returned no addresses inside container for %s", host)
+    except Exception as exc:
+        logging.error(
+            "Public-domain DNS lookup failed inside container for %s (%s). "
+            "This must be corrected in the platform DNS/domain routing, not in Mini App JavaScript.",
+            host,
+            type(exc).__name__,
+        )
+
+
 async def handle_privacy(request):
     return web.FileResponse(os.path.join(APP_DIR, "privacy.html"), headers={"Cache-Control": "public, max-age=300"})
 
@@ -6656,6 +6683,7 @@ async def main():
             logging.warning("Initial founder profile sync failed; cached profile will remain available: %s", exc)
     await seed_public_catalog()
     runner = await start_web_server()
+    await log_platform_domain_dns_status()
     watchlist_task = asyncio.create_task(watchlist_monitor_loop(), name="linkcheck-watchlist-monitor")
     plus_cleanup_task = asyncio.create_task(plus_retention_cleanup_loop(), name="linkcheck-plus-retention-cleanup")
     logging.info("Автоматическая массовая MTProto-проверка стартовых проектов отключена.")
