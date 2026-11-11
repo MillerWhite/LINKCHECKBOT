@@ -100,6 +100,12 @@ class SourceIntegrityTests(unittest.TestCase):
     def test_telegram_sdk_wait_is_not_too_short(self):
         self.assertIn("function waitForTelegramWebApp(timeoutMs=10000)", self.html)
 
+    def test_telegram_sdk_retries_after_load_errors(self):
+        self.assertIn("function retryTelegramWebAppSdk(attempt=1)", self.html)
+        self.assertIn("telegram-webapp-sdk-error", self.html)
+        self.assertIn("telegram-webapp-sdk-failed", self.html)
+        self.assertIn("attempt>2", self.html)
+
     def test_public_stats_do_not_wait_for_telegram_auth(self):
         self.assertIn("loadStats();\ninitUser().then(()=>loadRecent());", self.html)
 
