@@ -6,7 +6,7 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 
-from linkcheck_config import normalize_https_url, resolve_miniapp_url
+from linkcheck_config import derive_bothost_domain, normalize_https_url, resolve_miniapp_url
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,6 +137,14 @@ class SourceIntegrityTests(unittest.TestCase):
             resolved,
             "https://bot-1793993417-4443-nifortt.bothost.tech",
         )
+
+    def test_bothost_domain_is_derived_from_bot_id(self):
+        self.assertEqual(
+            derive_bothost_domain("bot_1793993417_4443_nifortt"),
+            "https://bot-1793993417-4443-nifortt.bothost.tech",
+        )
+        self.assertEqual(derive_bothost_domain(""), "")
+        self.assertEqual(derive_bothost_domain("some_other_id"), "")
 
     def test_configured_path_is_preserved_when_domain_matches(self):
         resolved = resolve_miniapp_url(
