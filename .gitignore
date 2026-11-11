@@ -1,0 +1,4 @@
+# SQLite databases (keep runtime data on persistent hosting storage)
+*.db
+*.db-shm
+*.db-wal
