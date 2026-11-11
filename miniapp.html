@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>LINKCHECK</title>
-<script async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('telegram-webapp-sdk-ready'))"></script>
+<script id="telegram-webapp-sdk" async src="https://telegram.org/js/telegram-web-app.js" onload="window.dispatchEvent(new Event('telegram-webapp-sdk-ready'))" onerror="this.dataset.failed='1';window.dispatchEvent(new Event('telegram-webapp-sdk-error'))"></script>
 <script async src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
 <style>
 :root{--bg:#050505;--card:#121212;--border:#262626;--silver:#a0a0a0;--text:#fff}
@@ -545,6 +545,28 @@ function syncTelegramWebApp(){
     tg.ready();
     tg.expand();
 }
+function retryTelegramWebAppSdk(attempt=1){
+    const initialScript=document.getElementById('telegram-webapp-sdk');
+    if(attempt===1&&initialScript?.dataset.retrying==='1')return;
+    if(initialScript)initialScript.dataset.retrying='1';
+    if(window.Telegram?.WebApp){
+        syncTelegramWebApp();
+        window.dispatchEvent(new Event('telegram-webapp-sdk-ready'));
+        return;
+    }
+    if(attempt>2){
+        window.dispatchEvent(new Event('telegram-webapp-sdk-failed'));
+        return;
+    }
+    const retryScript=document.createElement('script');
+    retryScript.async=true;
+    retryScript.src='https://telegram.org/js/telegram-web-app.js';
+    retryScript.onload=()=>window.dispatchEvent(new Event('telegram-webapp-sdk-ready'));
+    retryScript.onerror=()=>setTimeout(()=>retryTelegramWebAppSdk(attempt+1),750*attempt);
+    document.head.appendChild(retryScript);
+}
+window.addEventListener('telegram-webapp-sdk-error',()=>retryTelegramWebAppSdk());
+if(document.getElementById('telegram-webapp-sdk')?.dataset.failed==='1')retryTelegramWebAppSdk();
 syncTelegramWebApp();
 window.addEventListener('telegram-webapp-sdk-ready',syncTelegramWebApp);
 
@@ -1312,11 +1334,14 @@ function waitForTelegramWebApp(timeoutMs=10000){
             settled=true;
             clearTimeout(timer);
             window.removeEventListener('telegram-webapp-sdk-ready',onReady);
+            window.removeEventListener('telegram-webapp-sdk-failed',onFailed);
             resolve(!!tg.initData);
         };
         const onReady=()=>{syncTelegramWebApp();finish()};
+        const onFailed=()=>finish();
         const timer=setTimeout(finish,timeoutMs);
         window.addEventListener('telegram-webapp-sdk-ready',onReady,{once:true});
+        window.addEventListener('telegram-webapp-sdk-failed',onFailed,{once:true});
     });
 }
 async function initUser(){
