@@ -501,7 +501,25 @@ input::placeholder,textarea::placeholder{color:#666}
             <div class="plus-history" id="plus-payment-history"></div>
             <button class="watch-action" type="button" style="margin-top:12px" onclick="refreshPlusStatus()" id="plus-refresh-button">Обновить статус</button>
         </div>
-        <div class="plus-admin-box" id="plus-admin-box" style="display:none"><div style="font-size:13px;font-weight:850">Управление тарифами</div><div class="plus-muted" style="margin-top:5px">Изменение цены, длительности и скидки. Итоговая стоимость пересчитывается автоматически.</div><div id="plus-admin-plans"></div><div class="plus-admin-note">Настройки сохраняются на сервере в базе данных. Старые выставленные счета сохраняют первоначальную стоимость.</div></div>
+        <div class="plus-admin-box" id="plus-admin-box" style="display:none">
+            <div style="font-size:13px;font-weight:850">Управление тарифами</div>
+            <div class="plus-muted" style="margin-top:5px">Изменяйте, добавляйте и удаляйте тарифы. Старые выставленные счета сохраняют первоначальную стоимость.</div>
+            <div id="plus-admin-plans"></div>
+            <div class="plus-admin-plan">
+                <b>Добавить тариф</b>
+                <div class="plus-admin-grid"><label>Название<input id="plus-new-title" maxlength="48" placeholder="Например, 3 месяца"></label><label>Код<input id="plus-new-code" maxlength="24" placeholder="3m"></label><label>Срок, дней<input id="plus-new-days" type="number" min="1" max="3650" value="90"></label></div>
+                <div class="plus-admin-grid"><label>Цена, ⭐<input id="plus-new-price" type="number" min="1" max="1000000" value="500"></label><label>Скидка, %<input id="plus-new-discount" type="number" min="0" max="90" value="0"></label></div>
+                <button class="plus-admin-save" type="button" onclick="createPlusPlan(this)">Добавить тариф</button>
+            </div>
+            <div class="plus-admin-plan">
+                <b>Управление подпиской пользователя</b>
+                <div class="plus-muted" style="margin:5px 0 8px">Укажите username пользователя, который уже запускал бота или открывал LINKCHECK.</div>
+                <label style="display:block;color:#888;font-size:11px">Telegram username<input id="plus-user-username" maxlength="33" placeholder="@username" style="width:100%;margin-top:5px;padding:10px;border:1px solid #333;border-radius:8px;background:#111;color:#fff"></label>
+                <label style="display:block;color:#888;font-size:11px;margin-top:8px">Выдать на сколько дней<input id="plus-user-days" type="number" min="1" max="3650" value="30" style="width:100%;margin-top:5px;padding:10px;border:1px solid #333;border-radius:8px;background:#111;color:#fff"></label>
+                <div class="plus-admin-grid"><button class="plus-admin-save" type="button" onclick="adminPlusSubscription('grant',this)">Выдать / продлить</button><button class="plus-admin-save" type="button" onclick="adminPlusSubscription('revoke',this)">Отозвать подписку</button></div>
+            </div>
+            <div class="plus-admin-note">По username можно найти только пользователей, которые уже взаимодействовали с ботом: Telegram Bot API не позволяет боту получить ID произвольного пользователя только по нику.</div>
+        </div>
     </div>
 </div>
 <script>
@@ -2318,8 +2336,13 @@ async function loadPlusStatusInternal(){
         const plansEl=document.getElementById('plus-plans');
         const plans=data.plans&&typeof data.plans==='object'?data.plans:{};
         if(plansEl){
-            const planOrder=['1m','6m','12m'];
-            plansEl.innerHTML=planOrder.filter(code=>plans[code]).map(code=>{const plan=plans[code];const title=escapeHTML(plan.title||code);const price=Number(plan.stars)||0;const old=Number(plan.base_stars)||price;const discount=Number(plan.discount_percent)||0;return `<button class="plus-plan" type="button" onclick="buyPlus('${code}',this)" ${!data.payments_enabled?'disabled':''}><b>${title}</b><span>${price.toLocaleString()} ⭐ ${discount?`<s>${old.toLocaleString()}</s> · −${discount}%`:''}</span></button>`}).join('');
+            const planOrder=Object.keys(plans).sort((a,b)=>{
+                const defaults=['1m','6m','12m'];
+                const ai=defaults.indexOf(a),bi=defaults.indexOf(b);
+                if(ai!==-1||bi!==-1)return (ai===-1?99:ai)-(bi===-1?99:bi);
+                return Number(plans[a]?.days||0)-Number(plans[b]?.days||0)||a.localeCompare(b);
+            });
+            plansEl.innerHTML=planOrder.map(code=>{const plan=plans[code];const title=escapeHTML(plan.title||code);const price=Number(plan.stars)||0;const old=Number(plan.base_stars)||price;const discount=Number(plan.discount_percent)||0;return `<button class="plus-plan" type="button" onclick="buyPlus('${escapeHTML(code)}',this)" ${!data.payments_enabled?'disabled':''}><b>${title}</b><span>${price.toLocaleString()} ⭐ ${discount?`<s>${old.toLocaleString()}</s> · −${discount}%`:''}</span></button>`}).join('');
         }
         const trialButton=document.getElementById('plus-trial-button');
         if(trialButton){const sub=data.subscription;trialButton.style.display=data.trial_available?'block':'none';trialButton.disabled=!!sub?.active;trialButton.textContent=currentLanguage==='ru'?`Активировать тестовый доступ на ${Number(data.trial_days)||3} дня · 0 ⭐`:`Activate ${Number(data.trial_days)||3}-day trial · 0 ⭐`;}
@@ -2335,12 +2358,33 @@ async function loadPlusStatusInternal(){
 }
 function renderPlusAdminPlans(plans){
     const target=document.getElementById('plus-admin-plans');if(!target)return;
-    const labels={'1m':'1 месяц','6m':'6 месяцев','12m':'1 год'};
-    target.innerHTML=['1m','6m','12m'].map(code=>{const p=plans[code];if(!p)return '';return `<div class="plus-admin-plan"><b>${labels[code]}</b><div class="plus-admin-grid"><label>Срок, дней<input type="number" min="1" max="3650" id="plus-days-${code}" value="${Number(p.days)}"></label><label>Базовая цена, ⭐<input type="number" min="1" max="1000000" id="plus-price-${code}" value="${Number(p.base_stars)}"></label><label>Скидка, %<input type="number" min="0" max="90" id="plus-discount-${code}" value="${Number(p.discount_percent)}"></label></div><div class="plus-muted">Итог: ${Number(p.stars)} ⭐</div><button class="plus-admin-save" type="button" onclick="savePlusPlan('${code}',this)">Сохранить тариф</button></div>`}).join('');
+    const codes=Object.keys(plans||{}).sort((a,b)=>Number(plans[a]?.days||0)-Number(plans[b]?.days||0)||a.localeCompare(b));
+    target.innerHTML=codes.map(code=>{const p=plans[code];const safeCode=String(code).replace(/[^a-z0-9_-]/g,'');return `<div class="plus-admin-plan"><b>${escapeHTML(p.title||code)} · ${escapeHTML(code)}</b><div class="plus-admin-grid"><label>Срок, дней<input type="number" min="1" max="3650" id="plus-days-${safeCode}" value="${Number(p.days)}"></label><label>Базовая цена, ⭐<input type="number" min="1" max="1000000" id="plus-price-${safeCode}" value="${Number(p.base_stars)}"></label><label>Скидка, %<input type="number" min="0" max="90" id="plus-discount-${safeCode}" value="${Number(p.discount_percent)}"></label></div><div class="plus-muted">Итог: ${Number(p.stars)} ⭐</div><button class="plus-admin-save" type="button" onclick="savePlusPlan('${safeCode}',this)">Сохранить тариф</button><button class="plus-admin-save" style="margin-top:6px;background:#2b1717;color:#f3b4b4;border-color:#633" type="button" onclick="deletePlusPlan('${safeCode}',this)">Удалить тариф</button></div>`}).join('');
 }
 async function savePlusPlan(code,button){
     const payload={plan:code,days:document.getElementById(`plus-days-${code}`).value,base_stars:document.getElementById(`plus-price-${code}`).value,discount_percent:document.getElementById(`plus-discount-${code}`).value};button.disabled=true;
     try{const response=await fetch('/api/admin/plus/update',{method:'POST',headers:getHeaders(),body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось сохранить тариф');showToast('Тариф обновлён');await loadPlusStatus();}catch(error){showToast(error.message||'Ошибка сохранения','error');}finally{button.disabled=false;}
+}
+async function createPlusPlan(button){
+    const payload={title:document.getElementById('plus-new-title').value,plan:document.getElementById('plus-new-code').value,days:document.getElementById('plus-new-days').value,base_stars:document.getElementById('plus-new-price').value,discount_percent:document.getElementById('plus-new-discount').value};
+    button.disabled=true;
+    try{const response=await fetch('/api/admin/plus/create',{method:'POST',headers:getHeaders(),body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось создать тариф');showToast('Тариф добавлен');document.getElementById('plus-new-title').value='';document.getElementById('plus-new-code').value='';await loadPlusStatus();}
+    catch(error){showToast(error.message||'Ошибка создания','error');}finally{button.disabled=false;}
+}
+async function deletePlusPlan(code,button){
+    if(!window.confirm('Удалить тариф '+code+'?'))return;
+    button.disabled=true;
+    try{const response=await fetch('/api/admin/plus/delete',{method:'POST',headers:getHeaders(),body:JSON.stringify({plan:code}),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось удалить тариф');showToast('Тариф удалён');await loadPlusStatus();}
+    catch(error){showToast(error.message||'Ошибка удаления','error');}finally{button.disabled=false;}
+}
+async function adminPlusSubscription(action,button){
+    const username=document.getElementById('plus-user-username').value.trim();
+    const days=document.getElementById('plus-user-days').value;
+    if(!username){showToast('Введите username','error');return;}
+    if(action==='revoke'&&!window.confirm('Отозвать LINKCHECK PLUS у '+username+'?'))return;
+    button.disabled=true;
+    try{const response=await fetch('/api/admin/plus/subscription',{method:'POST',headers:getHeaders(),body:JSON.stringify({username,action,days}),signal:AbortSignal.timeout(12000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Не удалось изменить подписку');showToast(action==='grant'?'Подписка выдана до '+formatPlusDate(data.expires_at):'Подписка отозвана');await loadPlusStatus();}
+    catch(error){showToast(error.message||'Ошибка управления подпиской','error');}finally{button.disabled=false;}
 }
 async function claimPlusTrial(){
     const button=document.getElementById('plus-trial-button');button.disabled=true;
