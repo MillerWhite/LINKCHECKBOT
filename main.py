@@ -5880,7 +5880,10 @@ def business_sender_html(record):
     sender_id = business_record_value(record, "sender_user_id")
     username = str(business_record_value(record, "sender_username", "") or "").strip().lstrip("@")
     if username and re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
-        href = "https://t.me/" + username
+        # Use Telegram's in-app deep link instead of https://t.me/...
+        # A public t.me URL creates the unwanted account preview card
+        # underneath the PLUS notification.
+        href = "tg://resolve?domain=" + username
     elif sender_id:
         href = "tg://user?id=" + str(int(sender_id))
     else:
