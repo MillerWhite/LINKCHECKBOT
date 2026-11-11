@@ -523,9 +523,10 @@ input::placeholder,textarea::placeholder{color:#666}
     </div>
 </div>
 <script>
-const tg=window.Telegram.WebApp;
-tg.ready();
-tg.expand();
+// Do not let an unavailable Telegram SDK crash the whole Mini App.
+const tg=window.Telegram?.WebApp||{initData:'',initDataUnsafe:{},colorScheme:'dark',themeParams:{},platform:'unknown',ready(){},expand(){}};
+try{tg.ready();}catch(error){console.warn('Telegram WebApp ready() failed:',error)}
+try{tg.expand();}catch(error){console.warn('Telegram WebApp expand() failed:',error)}
 
 let isAdmin=false;
 let isTrusted=false;
