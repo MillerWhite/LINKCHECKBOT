@@ -119,7 +119,7 @@ class SourceIntegrityTests(unittest.TestCase):
 
     def test_no_credentials_are_embedded_in_example(self):
         example = (ROOT / ".env.example").read_text(encoding="utf-8")
-        for key in ("BOT_TOKEN=", "TG_API_HASH=", "TELEGRAM_API_ID="):
+        for key in ("BOT_TOKEN=", "TG_API_ID=", "TG_API_HASH="):
             self.assertIn(key, example)
         self.assertNotRegex(example, r"\d{8,10}:[A-Za-z0-9_-]{25,}")
 
