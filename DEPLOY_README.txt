@@ -20,9 +20,10 @@ LINKCHECK PLUS — Founder profile sync & owner analytics fix
 1. Сначала сделайте резервную копию /app/data, особенно linkcheck.db и Telethon session.
 2. В архиве замените main.py и miniapp.html. Остальные файлы проекта оставлены в комплекте.
 3. Не удаляйте и не пересоздавайте /app/data. Там сохраняются БД, Telethon session, кэш аватара и кэш gift-анимаций.
-4. Убедитесь, что Bothost запускает Python 3.11, точка входа main.py, и заданы BOT_TOKEN, TELEGRAM_API_ID, TELEGRAM_API_HASH, TG_SESSION и DB_PATH.
-5. Перезапустите приложение. На старте backend попробует синхронизировать профиль основателя.
-6. Проверьте Mini App внутри Telegram. Смена данных отображается автоматически с периодом опроса до 60 секунд для имени/username/gift status и до 120 секунд для фото при штатной работе Telegram API.
+4. Убедитесь, что Bothost запускает Python 3.11, точка входа main.py, а переменные BOT_TOKEN, TELEGRAM_API_ID и TELEGRAM_API_HASH заданы в панели окружения. Для резервной MTProto-проверки задайте SESSION_STRING (предпочтительно) либо путь к существующей авторизованной TG_SESSION. DB_PATH на Bothost автоматически направляется в /app/data/linkcheck.db.
+5. Если включён домен Bothost, платформа должна передавать DOMAIN. Backend теперь предпочитает актуальный DOMAIN устаревшему MINIAPP_URL; в логах печатаются выбранный hostname и результат DNS-проверки. Порт в панели должен совпадать с PORT приложения.
+6. Перезапустите приложение. Для проверки доступности домена откройте https://ВАШ-ДОМЕН/health: ожидается JSON с ok=true. Если браузер показывает ERR_NAME_NOT_RESOLVED, DNS-запись домена нужно восстановить на стороне Bothost — изменение Python/HTML не может создать DNS-запись.
+7. Проверьте Mini App внутри Telegram. Смена данных отображается автоматически с периодом опроса до 60 секунд для имени/username/gift status и до 120 секунд для фото при штатной работе Telegram API.
 
 ВАЖНЫЕ УСЛОВИЯ
 - Для загрузки collectible animation и фото требуется действующая авторизованная Telethon user session с доступом к профилю основателя.
