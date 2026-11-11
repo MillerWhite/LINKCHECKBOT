@@ -5659,6 +5659,10 @@ def business_sender_user_data(message: Message):
     if sender:
         username = str(getattr(sender, "username", None) or "").strip().lstrip("@")
         return int(sender.id), username or None
+    sender_chat = getattr(message, "sender_chat", None)
+    if sender_chat:
+        username = str(getattr(sender_chat, "username", None) or "").strip().lstrip("@")
+        return None, username or None
     return None, None
 
 
