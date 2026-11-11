@@ -548,9 +548,11 @@ function syncTelegramWebApp(){
 syncTelegramWebApp();
 window.addEventListener('telegram-webapp-sdk-ready',syncTelegramWebApp);
 
-// Retry only idempotent same-origin API reads after transient network/server failures.
-// Mutating POST requests are never retried, preventing duplicate submissions.
+// Give every same-origin API read a bounded timeout and retry transient failures.
+// This prevents mobile WebViews from waiting forever when a network path silently drops requests.
+// Mutating requests are never retried.
 const linkcheckNativeFetch=window.fetch.bind(window);
+const LINKCHECK_API_READ_TIMEOUT_MS=15000;
 window.fetch=async function(input,init={}){
     let requestUrl;
     try{
@@ -564,16 +566,34 @@ window.fetch=async function(input,init={}){
     const retryable=requestMethod==='GET'&&requestUrl.origin===window.location.origin&&requestUrl.pathname.startsWith('/api/');
     if(!retryable)return linkcheckNativeFetch(input,init);
     for(let attempt=0;attempt<3;attempt++){
+        if(requestSignal?.aborted)throw new Error('LINKCHECK API request was aborted');
+        const controller=typeof AbortController!=='undefined'?new AbortController():null;
+        let timeoutId=null;
+        let callerAbortHandler=null;
+        let timedOut=false;
+        const requestInit=controller?{...init,signal:controller.signal}:init;
+        if(controller){
+            if(requestSignal){
+                callerAbortHandler=()=>controller.abort();
+                requestSignal.addEventListener('abort',callerAbortHandler,{once:true});
+            }
+            timeoutId=setTimeout(()=>{timedOut=true;controller.abort()},LINKCHECK_API_READ_TIMEOUT_MS);
+        }
         try{
-            const response=await linkcheckNativeFetch(input,init);
+            const response=await linkcheckNativeFetch(input,requestInit);
             if(attempt<2&&[502,503,504].includes(response.status)){
-                await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+                try{await response.body?.cancel()}catch(error){}
+                await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
                 continue;
             }
             return response;
         }catch(error){
             if(requestSignal?.aborted||attempt===2)throw error;
-            await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+            if(!timedOut)console.warn('LINKCHECK API read failed; retrying:',requestUrl.pathname,error);
+            await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));
+        }finally{
+            if(timeoutId!==null)clearTimeout(timeoutId);
+            if(requestSignal&&callerAbortHandler)requestSignal.removeEventListener('abort',callerAbortHandler);
         }
     }
     throw new Error('LINKCHECK API request failed');
@@ -1283,7 +1303,7 @@ async function refreshFounderProfile(){
     return founderProfileRequest;
 }
 
-function waitForTelegramWebApp(timeoutMs=3000){
+function waitForTelegramWebApp(timeoutMs=10000){
     if(tg.initData)return Promise.resolve(true);
     return new Promise(resolve=>{
         let settled=false;
@@ -2481,10 +2501,19 @@ async function buyPlus(plan,button){
 }
 
 document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden&&document.getElementById('screen-profile')?.classList.contains('active'))loadOwnerAnalytics();
+    if(!document.hidden){
+        refreshCurrentScreen();
+        if(document.getElementById('screen-home')?.classList.contains('active'))loadStats();
+        if(document.getElementById('screen-profile')?.classList.contains('active'))loadOwnerAnalytics();
+    }
+});
+window.addEventListener('online',()=>{
+    refreshCurrentScreen();
+    if(document.getElementById('screen-home')?.classList.contains('active'))loadStats();
 });
 setLanguage(currentLanguage);
-initUser().then(()=>{loadStats();loadRecent()});
+loadStats();
+initUser().then(()=>loadRecent());
 refreshFounderProfile();
 founderRefreshInterval=setInterval(refreshFounderProfile,60000);
 </script>
