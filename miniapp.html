@@ -548,6 +548,37 @@ function syncTelegramWebApp(){
 syncTelegramWebApp();
 window.addEventListener('telegram-webapp-sdk-ready',syncTelegramWebApp);
 
+// Retry only idempotent same-origin API reads after transient network/server failures.
+// Mutating POST requests are never retried, preventing duplicate submissions.
+const linkcheckNativeFetch=window.fetch.bind(window);
+window.fetch=async function(input,init={}){
+    let requestUrl;
+    try{
+        const rawUrl=typeof input==='string'||input instanceof URL?String(input):input.url;
+        requestUrl=new URL(rawUrl,window.location.href);
+    }catch(error){
+        return linkcheckNativeFetch(input,init);
+    }
+    const requestMethod=String(init.method||(typeof Request!=='undefined'&&input instanceof Request?input.method:'GET')).toUpperCase();
+    const requestSignal=init.signal||(typeof Request!=='undefined'&&input instanceof Request?input.signal:null);
+    const retryable=requestMethod==='GET'&&requestUrl.origin===window.location.origin&&requestUrl.pathname.startsWith('/api/');
+    if(!retryable)return linkcheckNativeFetch(input,init);
+    for(let attempt=0;attempt<3;attempt++){
+        try{
+            const response=await linkcheckNativeFetch(input,init);
+            if(attempt<2&&[502,503,504].includes(response.status)){
+                await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+                continue;
+            }
+            return response;
+        }catch(error){
+            if(requestSignal?.aborted||attempt===2)throw error;
+            await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+        }
+    }
+    throw new Error('LINKCHECK API request failed');
+}
+
 let isAdmin=false;
 let isTrusted=false;
 let hasRequested=false;
