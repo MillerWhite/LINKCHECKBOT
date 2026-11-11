@@ -1,4 +1,21 @@
-# SQLite databases (keep runtime data on persistent hosting storage)
+# Environment and credentials
+.env
+.env.*
+!.env.example
+
+# Telegram authenticated sessions
+*.session
+*.session-journal
+
+# Runtime databases and SQLite sidecars
 *.db
 *.db-shm
 *.db-wal
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local tunnel binaries and generated runtime files
+cloudflared
+cloudflared.exe
