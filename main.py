@@ -1266,11 +1266,13 @@ def init_db():
                 media_file_id TEXT,
                 media_path TEXT,
                 is_outgoing INTEGER NOT NULL DEFAULT 0,
+                deleted_at TEXT,
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY(connection_id, chat_id, message_id)
             )
         """)
         ensure_column(conn, "plus_business_messages", "media_path", "TEXT")
+        ensure_column(conn, "plus_business_messages", "deleted_at", "TEXT")
         ensure_column(conn, "plus_business_messages", "sender_user_id", "INTEGER")
         ensure_column(conn, "plus_business_messages", "sender_username", "TEXT")
         # Scrub owner-authored message contents retained by earlier versions;
@@ -5241,6 +5243,12 @@ async def api_plus_status(request):
             "WHERE owner_tg_id=? ORDER BY updated_at DESC LIMIT 1", (owner_id,)
         ).fetchone()
         trial = conn.execute("SELECT expires_at FROM plus_trial_claims WHERE tg_id=?", (owner_id,)).fetchone()
+        archive_rows = conn.execute(
+            "SELECT chat_title,sender_label,message_date,text_content,caption,media_type,deleted_at "
+            "FROM plus_business_messages WHERE owner_tg_id=? AND is_outgoing=0 "
+            "ORDER BY COALESCE(message_date,updated_at) DESC LIMIT 50",
+            (owner_id,)
+        ).fetchall()
 
     if connection and bot:
         try:
@@ -5345,6 +5353,7 @@ async def api_plus_status(request):
         "subscription": ({"active": bool(sub["active"]), "plan": sub.get("plan_code"), "started_at": sub.get("started_at"), "expires_at": sub.get("expires_at")} if sub else None),
         "business_connection": business_payload,
         "payments": [dict(row) for row in payments],
+        "archive": [dict(row) for row in archive_rows],
         "message_retention_days": PLUS_MESSAGE_RETENTION_DAYS
     }, headers={"Cache-Control": "no-store"})
 
@@ -6179,6 +6188,8 @@ async def handle_deleted_business_messages(event):
         # deleting actor. For a private Business chat, is_outgoing identifies
         # the connected account's own message; suppress it and clean its cache.
         media_path = record.get("media_path")
+        if record.get("deleted_at"):
+            continue
         if bool(record.get("is_outgoing")):
             with db_connect() as conn:
                 conn.execute(
@@ -6206,15 +6217,12 @@ async def handle_deleted_business_messages(event):
             continue
         with db_connect() as conn:
             conn.execute(
-                "DELETE FROM plus_business_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
-                (event.business_connection_id, event.chat.id, record["message_id"])
+                "UPDATE plus_business_messages SET deleted_at=?,updated_at=? "
+                "WHERE connection_id=? AND chat_id=? AND message_id=? AND deleted_at IS NULL",
+                (now_iso(), now_iso(), event.business_connection_id, event.chat.id, record["message_id"])
             )
-        if media_path:
-            try:
-                if os.path.isfile(media_path):
-                    os.remove(media_path)
-            except OSError:
-                logging.exception("LINKCHECK PLUS: could not remove deleted-message media snapshot")
+        # Keep the original text and downloaded attachment in the archive until
+        # the normal retention cleanup expires the record.
 
     if missing:
         # The deletion update does not say who deleted the message. If no
