@@ -155,7 +155,10 @@ class SourceIntegrityTests(unittest.TestCase):
     def test_public_health_endpoint_is_registered(self):
         self.assertIn('app.router.add_get("/health", handle_health)', self.backend)
         self.assertIn('"service": "LINKCHECK"', self.backend)
+        self.assertIn('"bind_host": "0.0.0.0"', self.backend)
+        self.assertIn('"platform_domain_host": _platform_domain_host or None', self.backend)
         self.assertIn('"miniapp_url_source": MINIAPP_URL_SOURCE', self.backend)
+        self.assertIn("LINKCHECK hosting config: DOMAIN_present=%s", self.backend)
         self.assertIn("async def log_platform_domain_dns_status()", self.backend)
         self.assertIn("await log_platform_domain_dns_status()", self.backend)
 
