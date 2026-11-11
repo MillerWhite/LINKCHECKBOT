@@ -166,7 +166,7 @@ class SourceIntegrityTests(unittest.TestCase):
         self.assertIn('"bind_host": "0.0.0.0"', self.backend)
         self.assertIn('"platform_domain_host": _platform_domain_host or None', self.backend)
         self.assertIn('"miniapp_url_source": MINIAPP_URL_SOURCE', self.backend)
-        self.assertIn("LINKCHECK hosting config: DOMAIN_present=%s", self.backend)
+        self.assertIn("LINKCHECK hosting config: DOMAIN_source=%s", self.backend)
         self.assertIn("async def log_platform_domain_dns_status()", self.backend)
         self.assertIn("await log_platform_domain_dns_status()", self.backend)
 
